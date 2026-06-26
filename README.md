@@ -2,7 +2,7 @@
 
 An end-to-end, highly robust Retrieval-Augmented Generation (RAG) system built using LangChain, ChromaDB, and Google Gemini. This project features multi-strategy document chunking, hybrid retrieval (Dense + Sparse) with Reciprocal Rank Fusion (RRF), Cross-Encoder reranking, and a comprehensive automated evaluation suite using an LLM-as-a-Judge.
 
-![RAG Pipeline Flow Graph](path/to/your/pipeline-flow-graph.png)
+![RAG Pipeline Flow Graph](assets/flowgraph.png)
 
 ---
 

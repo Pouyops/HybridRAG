@@ -1,10 +1,12 @@
 import os
 import re
-from bs4 import BeautifulSoup
+
 import pymupdf
+from bs4 import BeautifulSoup
 from langchain_core.documents import Document
 
-class multiloader():
+
+class multiloader:
     def __init__(self, path):
         self.path = path
 
@@ -23,14 +25,14 @@ class multiloader():
         metadata = {
             "filepath": filepath,
             "extension": ext,
-            "filename": os.path.basename(filepath)
+            "filename": os.path.basename(filepath),
         }
         try:
             if ext == ".pdf":
                 content = self._load_pdf(filepath)
-            elif ext in ['.html', '.htm']:
+            elif ext in [".html", ".htm"]:
                 content = self._load_html(filepath)
-            elif ext in ['.md', '.txt']:
+            elif ext in [".md", ".txt"]:
                 content = self._load_text(filepath)
             else:
                 return None
@@ -46,20 +48,20 @@ class multiloader():
         text = ""
         with pymupdf.open(filepath) as doc:
             for page in doc:
-                text += page.get_text()
+                text += str(page.get_text("text"))
         return self._normalize_text(text)
 
     def _load_html(self, filepath):
-        with open(filepath, 'r', encoding='utf-8') as f:
-            soup = BeautifulSoup(f, 'html.parser')
-            text = soup.get_text(separator=' ')
+        with open(filepath, "r", encoding="utf-8") as f:
+            soup = BeautifulSoup(f, "html.parser")
+            text = soup.get_text(separator=" ")
         return self._normalize_text(text)
 
     def _load_text(self, filepath):
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             text = f.read()
         return self._normalize_text(text)
 
     def _normalize_text(self, text):
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
         return text.strip()

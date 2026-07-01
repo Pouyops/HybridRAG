@@ -1,0 +1,17 @@
+langchain
+langchain-core
+langchain-community
+langchain-google-genai
+langchain-text-splitters
+langchain-experimental
+langchain-chroma
+chromadb
+sentence-transformers
+pymupdf
+beautifulsoup4
+python-dotenv
+pandas
+pydantic
+rank-bm25
+tiktoken
+tenacity

@@ -1,15 +1,15 @@
-import os
 from collections import defaultdict
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain_community.retrievers import BM25Retriever
 
-class indexer():
-    def __init__(self, api_key, model_name="models/gemini-embedding-001"):
-        self.embeddings = GoogleGenerativeAIEmbeddings(
-            model=model_name,
-            google_api_key=api_key
-        )
+from langchain_community.retrievers import BM25Retriever
+from langchain_community.vectorstores import Chroma
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+
+class indexer:
+    def __init__(self, api_key=None, model_name="models/gemini-embedding-001"):
+        # GoogleGenerativeAIEmbeddings reads GOOGLE_API_KEY from the environment
+        # automatically (populated by load_dotenv() in the entry point).
+        self.embeddings = GoogleGenerativeAIEmbeddings(model=model_name)
 
     def _prepare_metadata(self, chunks):
         file_chunk_counters = defaultdict(int)
@@ -40,8 +40,8 @@ class indexer():
         vectorstore = Chroma.from_documents(
             documents=processed_chunks,
             embedding=self.embeddings,
-            persist_directory=persist_directory
+            persist_directory=persist_directory,
         )
-        bm25_retriever = BM25Retriever.from_documents(processed_chunks)
+        bm25_retriever = BM25Retriever.from_documents(processed_chunks, k=60)
 
         return vectorstore, bm25_retriever

@@ -1,4 +1,32 @@
+import logging
+import time
+
 from sentence_transformers import CrossEncoder
+
+logger = logging.getLogger(__name__)
+
+_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+
+def _load_cross_encoder(model_name: str, max_retries: int = 5) -> CrossEncoder:
+    """Load a CrossEncoder, retrying on network errors (e.g. interrupted downloads)."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            return CrossEncoder(model_name)
+        except Exception as e:
+            if attempt < max_retries:
+                wait = 5 * attempt
+                logger.warning(
+                    "CrossEncoder download failed (attempt %d/%d), retrying in %ds: %s",
+                    attempt,
+                    max_retries,
+                    wait,
+                    e,
+                )
+                time.sleep(wait)
+            else:
+                raise
+    raise RuntimeError("Unreachable")  # satisfies the type checker
 
 
 class HybridRetriever:
@@ -15,7 +43,7 @@ class HybridRetriever:
         self.dense_weight = dense_weight
         self.sparse_weight = sparse_weight
         self.initial_k = initial_k
-        self.reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        self.reranker = _load_cross_encoder(_RERANKER_MODEL)
 
     def retrieve_and_fuse(self, query, fusion_k=60, top_n=20):
         dense_results = self.vectorstore.similarity_search(query, k=fusion_k)

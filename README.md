@@ -32,41 +32,63 @@ An end-to-end, highly robust Retrieval-Augmented Generation (RAG) system built u
 * OpenAI API Key
 * Required libraries:
   ```bash
-  pip install langchain_text_splitters pymupdf langchain_experimental \
-  langchain_openai chromadb rank_bm25 sentence-transformers \
-  langchain_community bs4 pydantic
+  pip install -r requirements.txt
+  ```
+
 ## 🚀 Usage
-1. Initialize and Ingest
+
+Add an `OPENAI_API_KEY` to a `.env` file in the project root, then run the pipeline against your own documents and question:
+
+```bash
+python main.py --data-dir ./data --query "Your question here?"
+```
+
+Both flags are optional — running `python main.py` with no arguments uses `./data/` and a built-in sample query. Each run: indexes the documents in `--data-dir`, answers `--query` with cited sources, generates a 15-question synthetic evaluation set, and benchmarks all three chunking strategies against it.
+
+For programmatic use, the same building blocks can be composed directly:
 
 ```Python
-# Initialize models and loaders
-loader = multiloader('/path/to/data')
+from src.loader import multiloader
+from src.chunker import Chunker
+from src.indexer import indexer
+from src.retriever import HybridRetriever
+from src.generator import AdvancedRAGSystem
+
+loader = multiloader("/path/to/data")
 documents = loader._document_loader()
 
-# Chunk documents
-chunker = Chunker()
-all_chunks = chunker.chunk_documents(documents, strategy="TokenRecursive")
-```
+chunker = Chunker(embedding_fn=None)
+all_chunks = []
+for doc in documents:
+    all_chunks.extend(chunker.chunk_documents(doc.page_content, doc.metadata, strategy="TokenRecursive"))
 
-2. Indexing and Retrieval
-```Python
-
-idx = indexer()
+idx = indexer(api_key=OPENAI_API_KEY)
 vectorstore, bm25 = idx.create_indexes(all_chunks)
 
-retriever = HybridRetriever(vectorestore=vectorstore, bm25_retriever=bm25)
+retriever = HybridRetriever(vectorstore=vectorstore, bm25_retriever=bm25)
 rag_system = AdvancedRAGSystem(llm=generator_llm, retriever=retriever)
-```
-3. Generate Answer
-```Python
 
 response = rag_system.generate_robust_answer("Your query here?")
 print(response)
 ```
-📊 Evaluation
 
-You can benchmark the system by generating a synthetic test set:
-```Python
+## 📊 Evaluation
 
-synthetic_evaluator = SyntheticEvaluator(vectorstore=vectorstore, llm=judge_llm)
-synthetic_evaluator.build_dataset(total_questions=15)
+`main.py` benchmarks all three chunking strategies (TokenRecursive, Markdown, Semantic) against a synthetic 15-question evaluation set, scoring each on correctness, faithfulness, retrieval relevance, and citation accuracy via an LLM-as-a-Judge. Sample results from a run against a single sample document (`gpt-4o-mini` for both generation and judging):
+
+| Chunking Strategy | Correctness | Faithfulness | Retrieval Relevance | Citation Accuracy | Fallback Rate |
+|---|---|---|---|---|---|
+| TokenRecursive | 0.9071 | 0.9857 | 0.8429 | 0.9524 | 0.0000 |
+| Markdown | 0.8958 | 1.0000 | 0.9583 | 1.0000 | 0.1667 |
+| Semantic | 0.8750 | 0.9900 | 0.9300 | 0.9500 | 0.4000 |
+
+Results are generated per-run from a synthetic dataset, so exact numbers will vary between runs and datasets.
+
+## ✅ Testing
+
+Unit tests cover the RRF fusion/reranking math, citation parsing and verification, chunk metadata assignment, and the document loader — all without calling any external LLM or embedding API.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```

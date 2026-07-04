@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import shutil
@@ -83,7 +84,30 @@ def run_strategy_comparison(gitlab_documents, dataset_path, llm, judge_llm, api_
     return report_df
 
 
+DEFAULT_QUERY = (
+    "What specific defensive action did Sergeant Miller take when the enemy "
+    "armored units initiated the breach at 0400 hours?"
+)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run the Hybrid RAG pipeline.")
+    parser.add_argument(
+        "--data-dir",
+        default="./data/",
+        help="Directory containing the documents to index (default: ./data/).",
+    )
+    parser.add_argument(
+        "--query",
+        default=DEFAULT_QUERY,
+        help="Question to ask the RAG system (default: the built-in sample query).",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
+
     load_dotenv()
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     if not OPENAI_API_KEY:
@@ -101,13 +125,13 @@ if __name__ == "__main__":
         api_key=OPENAI_API_KEY,
     )
 
-    dataset_path = "./data/"
+    dataset_path = args.data_dir
     loader = multiloader(dataset_path)
     all_documents = loader._document_loader()
     subset_all_documents = all_documents[:50]
 
     if not subset_all_documents:
-        print("No documents loaded. Please add files to the ./data/ directory.")
+        print(f"No documents loaded. Please add files to the {dataset_path} directory.")
     else:
         print("--- Testing Single Query Execution ---")
         chunker = Chunker(embedding_fn=None)
@@ -126,8 +150,7 @@ if __name__ == "__main__":
         retriever = HybridRetriever(vectorstore=vectorstore, bm25_retriever=bm25)
         rag_system = AdvancedRAGSystem(llm=generator_llm, retriever=retriever)
 
-        test_query = "What specific defensive action did Sergeant Miller take when the enemy armored units initiated the breach at 0400 hours?"
-        response = rag_system.generate_robust_answer(test_query)
+        response = rag_system.generate_robust_answer(args.query)
         print(response)
 
         print("\n--- Generating Synthetic Evaluation Dataset ---")

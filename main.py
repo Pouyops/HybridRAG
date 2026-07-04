@@ -4,14 +4,13 @@ import shutil
 
 import pandas as pd
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from src.chunker import Chunker
 from src.evaluator import RAGEvaluator, SyntheticEvaluator
 from src.generator import AdvancedRAGSystem
 from src.indexer import indexer
 from src.loader import multiloader
-from src.rate_limiter import RateLimitedLLM, create_llm_rate_limiter
 from src.retriever import HybridRetriever
 
 logging.basicConfig(
@@ -24,7 +23,7 @@ def run_strategy_comparison(gitlab_documents, dataset_path, llm, judge_llm, api_
     strategies = ["TokenRecursive", "Markdown", "Semantic"]
     report_data = []
 
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
     for strategy in strategies:
         db_path = f"./chroma_db_{strategy}"
@@ -86,32 +85,20 @@ def run_strategy_comparison(gitlab_documents, dataset_path, llm, judge_llm, api_
 
 if __name__ == "__main__":
     load_dotenv()
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-    if not GOOGLE_API_KEY:
-        raise ValueError("GOOGLE_API_KEY environment variable not set.")
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY environment variable not set.")
 
-    # --- Rate limiting ---------------------------------------------------
-    # Free-tier ceiling: 10 RPM, 250 K TPM, 500 RPD.
-    # Set GEMINI_RPM_LIMIT in your .env to override (e.g. 15 for paid tier).
-    rpm_limit = int(os.getenv("GEMINI_RPM_LIMIT", "8"))
-    rate_limiter = create_llm_rate_limiter(rpm_limit)
-
-    generator_llm = RateLimitedLLM(
-        ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0,
-            google_api_key=GOOGLE_API_KEY,
-            rate_limiter=rate_limiter,
-        )
+    generator_llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        api_key=OPENAI_API_KEY,
     )
 
-    judge_llm = RateLimitedLLM(
-        ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0,
-            google_api_key=GOOGLE_API_KEY,
-            rate_limiter=rate_limiter,
-        )
+    judge_llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        api_key=OPENAI_API_KEY,
     )
 
     dataset_path = "./data/"
@@ -131,7 +118,7 @@ if __name__ == "__main__":
             )
             all_chunks.extend(chunks)
 
-        idx = indexer(api_key=GOOGLE_API_KEY)
+        idx = indexer(api_key=OPENAI_API_KEY)
         vectorstore, bm25 = idx.create_indexes(
             all_chunks, persist_directory="./chroma_main_db"
         )
@@ -154,5 +141,5 @@ if __name__ == "__main__":
             dataset_path="evaluation_dataset.json",
             llm=generator_llm,
             judge_llm=judge_llm,
-            api_key=GOOGLE_API_KEY,
+            api_key=OPENAI_API_KEY,
         )

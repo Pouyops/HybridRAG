@@ -1,6 +1,6 @@
 # Advanced RAG Pipeline with Hybrid Retrieval & Automated Evaluation
 
-An end-to-end, highly robust Retrieval-Augmented Generation (RAG) system built using LangChain, ChromaDB, and Google Gemini. This project features multi-strategy document chunking, hybrid retrieval (Dense + Sparse) with Reciprocal Rank Fusion (RRF), Cross-Encoder reranking, and a comprehensive automated evaluation suite using an LLM-as-a-Judge.
+An end-to-end, highly robust Retrieval-Augmented Generation (RAG) system built using LangChain, ChromaDB, and OpenAI. This project features multi-strategy document chunking, hybrid retrieval (Dense + Sparse) with Reciprocal Rank Fusion (RRF), Cross-Encoder reranking, and a comprehensive automated evaluation suite using an LLM-as-a-Judge.
 
 ![RAG Pipeline Flow Graph](assets/flowgraph.png)
 
@@ -29,11 +29,11 @@ An end-to-end, highly robust Retrieval-Augmented Generation (RAG) system built u
 ## 📦 Prerequisites
 
 * Python 3.9+
-* Google Gemini API Key
+* OpenAI API Key
 * Required libraries:
   ```bash
   pip install langchain_text_splitters pymupdf langchain_experimental \
-  langchain_google_genai chromadb rank_bm25 sentence-transformers \
+  langchain_openai chromadb rank_bm25 sentence-transformers \
   langchain_community bs4 pydantic
 ## 🚀 Usage
 1. Initialize and Ingest

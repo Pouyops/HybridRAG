@@ -3,7 +3,7 @@ import random
 from typing import cast
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 
@@ -17,8 +17,8 @@ class QAPair(BaseModel):
 class SyntheticEvaluator:
     def __init__(self, vectorstore, llm=None):
         self.vectorstore = vectorstore
-        self.llm = llm or ChatGoogleGenerativeAI(
-            model="gemini-2.5-pro", temperature=0.7
+        self.llm = llm or ChatOpenAI(
+            model="gpt-4o-mini", temperature=0.7
         )
         self.structured_llm = self.llm.with_structured_output(QAPair)
 

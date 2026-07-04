@@ -2,14 +2,14 @@ from collections import defaultdict
 
 from langchain_chroma import Chroma
 from langchain_community.retrievers import BM25Retriever
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 
 class indexer:
-    def __init__(self, api_key=None, model_name="models/gemini-embedding-001"):
-        # GoogleGenerativeAIEmbeddings reads GOOGLE_API_KEY from the environment
+    def __init__(self, api_key=None, model_name="text-embedding-3-small"):
+        # OpenAIEmbeddings reads OPENAI_API_KEY from the environment
         # automatically (populated by load_dotenv() in the entry point).
-        self.embeddings = GoogleGenerativeAIEmbeddings(model=model_name)
+        self.embeddings = OpenAIEmbeddings(model=model_name)
 
     def _prepare_metadata(self, chunks):
         file_chunk_counters = defaultdict(int)

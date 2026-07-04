@@ -1,1 +1,5 @@
 .env
+__pycache__/
+chroma_db_*/
+chroma_main_db/
+evaluation_dataset.json

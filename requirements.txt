@@ -1,7 +1,7 @@
 langchain
 langchain-core
 langchain-community
-langchain-google-genai
+langchain-openai
 langchain-text-splitters
 langchain-experimental
 langchain-chroma
@@ -14,4 +14,3 @@ pandas
 pydantic
 rank-bm25
 tiktoken
-tenacity

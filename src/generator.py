@@ -1,7 +1,13 @@
+import math
 import re
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+def _normalize_cross_encoder_score(score: float) -> float:
+    """Squash a raw cross-encoder logit into (0, 1) via a sigmoid."""
+    return 1.0 / (1.0 + math.exp(-score))
 
 
 class CitationVerification(BaseModel):
@@ -87,9 +93,19 @@ class AdvancedRAGSystem:
         )
 
     def score_confidence(
-        self, query: str, answer: str, retrieved_chunks: List[Any], coverage: float
+        self,
+        query: str,
+        answer: str,
+        retrieved_chunks: List[Any],
+        coverage: float,
+        rerank_scores: Optional[List[float]] = None,
     ) -> ConfidenceScore:
-        retrieval_score = 0.85
+        top_scores = (rerank_scores or [])[:3]
+        retrieval_score = (
+            sum(_normalize_cross_encoder_score(s) for s in top_scores) / len(top_scores)
+            if top_scores
+            else 0.0
+        )
 
         completeness_prompt = f"""
         Rate how completely the answer addresses the query on a scale of 0.0 to 1.0.
@@ -117,10 +133,13 @@ class AdvancedRAGSystem:
         )
 
     def generate_robust_answer(self, query: str):
-        chunks = self.retriever.get_relevant_documents(query)
+        ranked_chunks = self.retriever.get_relevant_documents(query)
 
-        if not chunks:
+        if not ranked_chunks:
             return self._format_unknown_response(query, "No documents retrieved.")
+
+        chunks = [doc for doc, _ in ranked_chunks]
+        rerank_scores = [score for _, score in ranked_chunks]
 
         context = "\n".join(
             [
@@ -141,7 +160,7 @@ class AdvancedRAGSystem:
         claims = self.parse_citations(raw_answer)
         verification = self.verify_citations(claims, chunks)
         confidence = self.score_confidence(
-            query, raw_answer, chunks, verification.coverage_percentage
+            query, raw_answer, chunks, verification.coverage_percentage, rerank_scores
         )
 
         if not confidence.is_confident:
@@ -155,6 +174,7 @@ class AdvancedRAGSystem:
         return {
             "status": "Success",
             "answer": raw_answer,
+            "retrieved_chunks": chunks,
             "confidence_metrics": confidence.model_dump(),
             "flagged_citations": [
                 v.model_dump() for v in verification.verifications if not v.is_supported

@@ -36,17 +36,21 @@ class HybridRetriever:
         bm25_retriever,
         dense_weight=0.7,
         sparse_weight=0.3,
-        initial_k=10,
     ):
         self.vectorstore = vectorstore
         self.bm25_retriever = bm25_retriever
         self.dense_weight = dense_weight
         self.sparse_weight = sparse_weight
-        self.initial_k = initial_k
         self.reranker = _load_cross_encoder(_RERANKER_MODEL)
 
-    def retrieve_and_fuse(self, query, fusion_k=60, top_n=20):
-        dense_results = self.vectorstore.similarity_search(query, k=fusion_k)
+    def retrieve_and_fuse(self, query, retrieval_depth=60, rrf_k=60, top_n=20):
+        """
+        retrieval_depth: how many candidates to pull from each of the dense/
+        sparse retrievers before fusion. rrf_k: the smoothing constant in the
+        Reciprocal Rank Fusion formula 1/(rrf_k + rank) — independent of how
+        deep the initial retrieval goes.
+        """
+        dense_results = self.vectorstore.similarity_search(query, k=retrieval_depth)
         sparse_results = self.bm25_retriever.invoke(query)
 
         fused_scores = {}
@@ -56,7 +60,7 @@ class HybridRetriever:
             if doc_content not in fused_scores:
                 fused_scores[doc_content] = {"doc": doc, "score": 0}
             fused_scores[doc_content]["score"] += self.dense_weight * (
-                1 / (fusion_k + rank)
+                1 / (rrf_k + rank)
             )
 
         for rank, doc in enumerate(sparse_results):
@@ -64,7 +68,7 @@ class HybridRetriever:
             if doc_content not in fused_scores:
                 fused_scores[doc_content] = {"doc": doc, "score": 0}
             fused_scores[doc_content]["score"] += self.sparse_weight * (
-                1 / (fusion_k + rank)
+                1 / (rrf_k + rank)
             )
 
         ranked_results = sorted(
@@ -74,15 +78,16 @@ class HybridRetriever:
         return [item for item in ranked_results[:top_n]]
 
     def rerank(self, query, candidates, final_k=5):
+        """Returns [(doc, cross_encoder_score), ...] sorted by score, so callers
+        can use the score as a real relevance signal instead of discarding it."""
         pairs = [[query, doc["doc"].page_content] for doc in candidates]
         scores = self.reranker.predict(pairs)
 
         scored_docs = list(zip(candidates, scores))
         scored_docs.sort(key=lambda x: x[1], reverse=True)
 
-        return [item["doc"] for item, score in scored_docs[:final_k]]
+        return [(item["doc"], float(score)) for item, score in scored_docs[:final_k]]
 
     def get_relevant_documents(self, query):
         candidates = self.retrieve_and_fuse(query, top_n=20)
-        final_results = self.rerank(query, candidates, final_k=5)
-        return final_results
+        return self.rerank(query, candidates, final_k=5)

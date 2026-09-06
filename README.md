@@ -74,13 +74,13 @@ print(response)
 
 ## 📊 Evaluation
 
-`main.py` benchmarks all three chunking strategies (TokenRecursive, Markdown, Semantic) against a synthetic 15-question evaluation set, scoring each on correctness, faithfulness, retrieval relevance, and citation accuracy via an LLM-as-a-Judge. Sample results from a run against a single sample document (`gpt-4o-mini` for both generation and judging):
+`main.py` benchmarks all three chunking strategies (TokenRecursive, Markdown, Semantic) against a synthetic 15-question evaluation set, scoring each on correctness, faithfulness, retrieval relevance, and citation accuracy via an LLM-as-a-Judge. Retrieval confidence comes from the cross-encoder's own reranking scores, and citation accuracy is judged independently from the chunks the answer actually used — not copied from the generator's self-reported confidence. Sample results from a run against a single sample document (`gpt-4o-mini` for both generation and judging):
 
 | Chunking Strategy | Correctness | Faithfulness | Retrieval Relevance | Citation Accuracy | Fallback Rate |
 |---|---|---|---|---|---|
-| TokenRecursive | 0.9071 | 0.9857 | 0.8429 | 0.9524 | 0.0000 |
-| Markdown | 0.8958 | 1.0000 | 0.9583 | 1.0000 | 0.1667 |
-| Semantic | 0.8750 | 0.9900 | 0.9300 | 0.9500 | 0.4000 |
+| TokenRecursive | 0.9727 | 0.9909 | 0.9182 | 0.9091 | 0.2727 |
+| Markdown | 0.9727 | 1.0000 | 0.9455 | 1.0000 | 0.2727 |
+| Semantic | 0.9571 | 1.0000 | 0.9286 | 1.0000 | 1.0000 |
 
 Results are generated per-run from a synthetic dataset, so exact numbers will vary between runs and datasets.
 

@@ -6,6 +6,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
+from src.generator import CitationVerification
+
 
 class QAPair(BaseModel):
     question: str = Field(description="The generated question")
@@ -130,6 +132,7 @@ class RAGEvaluator:
     def __init__(self, rag_pipeline, judge_llm):
         self.rag_pipeline = rag_pipeline
         self.judge_llm = judge_llm.with_structured_output(EvaluationScore)
+        self.citation_judge_llm = judge_llm.with_structured_output(CitationVerification)
 
     def measure_correctness(self, question, expected, generated):
         prompt = ChatPromptTemplate.from_template(
@@ -159,6 +162,32 @@ class RAGEvaluator:
         )
         return self.judge_llm.invoke(prompt.format(question=question, context=context))
 
+    def measure_citation_accuracy(self, claims, retrieved_chunks):
+        """Independently judge each cited claim against its source chunk —
+        the fraction actually supported, not a copy of the generator's own
+        self-graded confidence figure."""
+        if not claims:
+            return 1.0
+
+        supported_count = 0
+        for claim_data in claims:
+            chunk_id = claim_data["chunk_id"]
+            chunk_content = ""
+            if 0 < chunk_id <= len(retrieved_chunks):
+                chunk_content = retrieved_chunks[chunk_id - 1].page_content
+
+            prompt = (
+                "Evaluate if the following claim is fully supported by the provided source text.\n"
+                f"Claim: {claim_data['claim']}\n"
+                f"Cited Chunk ID: {chunk_id}\n"
+                f"Source Text: {chunk_content}"
+            )
+            result = self.citation_judge_llm.invoke(prompt)
+            if result.is_supported:
+                supported_count += 1
+
+        return supported_count / len(claims)
+
     def run_test_suite(self, dataset_path):
         with open(dataset_path, "r") as f:
             test_cases = json.load(f)
@@ -185,15 +214,15 @@ class RAGEvaluator:
                 continue
 
             generated_answer = rag_response["answer"]
-            retrieved_chunks = self.rag_pipeline.retriever.get_relevant_documents(query)
+            retrieved_chunks = rag_response["retrieved_chunks"]
             context_str = "\n".join([c.page_content for c in retrieved_chunks])
 
             correctness = self.measure_correctness(query, expected, generated_answer)
             faithfulness = self.measure_faithfulness(generated_answer, context_str)
             retrieval = self.measure_retrieval_relevance(query, context_str)
 
-            citation_metrics = rag_response.get("confidence_metrics", {})
-            citation_accuracy = citation_metrics.get("citation_coverage", 0.0)
+            claims = self.rag_pipeline.parse_citations(generated_answer)
+            citation_accuracy = self.measure_citation_accuracy(claims, retrieved_chunks)
 
             results["avg_correctness"] += correctness.score
             results["avg_faithfulness"] += faithfulness.score

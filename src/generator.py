@@ -14,7 +14,9 @@ def _normalize_cross_encoder_score(score: float) -> float:
 
 class CitationVerification(BaseModel):
     claim: str = Field(description="The specific claim extracted from the answer")
-    cited_chunk_id: int = Field(description="The ID of the chunk cited for this claim")
+    cited_chunk_ids: List[int] = Field(
+        description="The IDs of the chunks cited for this claim"
+    )
     is_supported: bool = Field(
         description="Whether the source text fully supports the claim"
     )
@@ -44,6 +46,11 @@ class AdvancedRAGSystem:
         self.judge_llm = llm.with_structured_output(CitationVerification)
 
     def parse_citations(self, answer: str) -> List[Dict[str, Any]]:
+        """Splits an answer into (claim, cited chunk ids) pairs. Back-to-back
+        citations on the same claim (e.g. "...the Moon [1][2].") attach ALL
+        of their chunk ids to that one claim, rather than the second (and
+        any subsequent) citation being silently dropped because there's no
+        text between the brackets to anchor a new claim to."""
         claims = []
         parts = re.split(r"(\[\d+\])", answer)
         current_claim = ""
@@ -53,8 +60,10 @@ class AdvancedRAGSystem:
                 chunk_id = int(part.strip("[]"))
                 if current_claim.strip():
                     claims.append(
-                        {"claim": current_claim.strip(), "chunk_id": chunk_id}
+                        {"claim": current_claim.strip(), "chunk_ids": [chunk_id]}
                     )
+                elif claims:
+                    claims[-1]["chunk_ids"].append(chunk_id)
                 current_claim = ""
             else:
                 current_claim += part
@@ -68,18 +77,22 @@ class AdvancedRAGSystem:
         supported_count = 0
 
         for claim_data in claims:
-            chunk_id = claim_data["chunk_id"]
+            chunk_ids = claim_data["chunk_ids"]
             claim_text = claim_data["claim"]
 
-            chunk_content = ""
-            if 0 < chunk_id <= len(retrieved_chunks):
-                chunk_content = retrieved_chunks[chunk_id - 1].page_content
+            chunk_contents = [
+                retrieved_chunks[cid - 1].page_content
+                for cid in chunk_ids
+                if 0 < cid <= len(retrieved_chunks)
+            ]
+            source_text = "\n\n".join(chunk_contents)
 
             prompt = f"""
-            Evaluate if the following claim is fully supported by the provided source text.
+            Evaluate if the following claim is fully supported by the provided source
+            text (which may combine multiple cited chunks).
             Claim: {claim_text}
-            Cited Chunk ID: {chunk_id}
-            Source Text: {chunk_content}
+            Cited Chunk IDs: {chunk_ids}
+            Source Text: {source_text}
             """
 
             result = self.judge_llm.invoke(prompt)

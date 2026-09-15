@@ -172,16 +172,20 @@ class RAGEvaluator:
 
         supported_count = 0
         for claim_data in claims:
-            chunk_id = claim_data["chunk_id"]
-            chunk_content = ""
-            if 0 < chunk_id <= len(retrieved_chunks):
-                chunk_content = retrieved_chunks[chunk_id - 1].page_content
+            chunk_ids = claim_data["chunk_ids"]
+            chunk_contents = [
+                retrieved_chunks[cid - 1].page_content
+                for cid in chunk_ids
+                if 0 < cid <= len(retrieved_chunks)
+            ]
+            source_text = "\n\n".join(chunk_contents)
 
             prompt = (
-                "Evaluate if the following claim is fully supported by the provided source text.\n"
+                "Evaluate if the following claim is fully supported by the provided source "
+                "text (which may combine multiple cited chunks).\n"
                 f"Claim: {claim_data['claim']}\n"
-                f"Cited Chunk ID: {chunk_id}\n"
-                f"Source Text: {chunk_content}"
+                f"Cited Chunk IDs: {chunk_ids}\n"
+                f"Source Text: {source_text}"
             )
             result = self.citation_judge_llm.invoke(prompt)
             if result.is_supported:

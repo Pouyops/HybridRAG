@@ -18,8 +18,8 @@ def test_parse_citations_splits_claims_by_bracketed_reference():
     claims = system.parse_citations(answer)
 
     assert claims == [
-        {"claim": "The sky is blue", "chunk_id": 1},
-        {"claim": ". Grass is green", "chunk_id": 2},
+        {"claim": "The sky is blue", "chunk_ids": [1]},
+        {"claim": ". Grass is green", "chunk_ids": [2]},
     ]
 
 
@@ -32,22 +32,45 @@ def test_parse_citations_ignores_text_without_a_citation():
     assert claims == []
 
 
+def test_parse_citations_attaches_back_to_back_citations_to_the_same_claim():
+    """Regression test: a claim like "...the Moon [1][2]." must attach BOTH
+    chunk ids to the one claim, not silently drop [2] because there's no
+    text between the two brackets to anchor a second claim to."""
+    system = _make_system()
+    answer = "Apollo 11 launched and landed in 1969 [1][2]."
+
+    claims = system.parse_citations(answer)
+
+    assert claims == [
+        {"claim": "Apollo 11 launched and landed in 1969", "chunk_ids": [1, 2]},
+    ]
+
+
+def test_parse_citations_three_back_to_back_citations():
+    system = _make_system()
+    answer = "A compound claim [1][2][3]."
+
+    claims = system.parse_citations(answer)
+
+    assert claims == [{"claim": "A compound claim", "chunk_ids": [1, 2, 3]}]
+
+
 def test_verify_citations_computes_coverage_from_judge_results():
     system = _make_system()
     chunks = [Document(page_content="context A", metadata={})]
     claims = [
-        {"claim": "claim one", "chunk_id": 1},
-        {"claim": "claim two", "chunk_id": 1},
+        {"claim": "claim one", "chunk_ids": [1]},
+        {"claim": "claim two", "chunk_ids": [1]},
     ]
 
     results = iter(
         [
             CitationVerification(
-                claim="claim one", cited_chunk_id=1, is_supported=True, reasoning="ok"
+                claim="claim one", cited_chunk_ids=[1], is_supported=True, reasoning="ok"
             ),
             CitationVerification(
                 claim="claim two",
-                cited_chunk_id=1,
+                cited_chunk_ids=[1],
                 is_supported=False,
                 reasoning="not supported",
             ),
@@ -64,6 +87,39 @@ def test_verify_citations_computes_coverage_from_judge_results():
 
     assert verification.coverage_percentage == 0.5
     assert len(verification.verifications) == 2
+
+
+def test_verify_citations_combines_content_from_multiple_cited_chunks():
+    """Regression test: a claim citing two chunks (chunk_ids=[1, 2]) must be
+    judged against the COMBINED content of both, not just the first -- this
+    is what was breaking "when did apollo 11 happen?"-style answers, where
+    a single claim spans facts from two different chunks."""
+    system = _make_system()
+    chunks = [
+        Document(page_content="launched July 16, 1969", metadata={}),
+        Document(page_content="landed July 20, 1969", metadata={}),
+    ]
+    claims = [{"claim": "launched and landed in 1969", "chunk_ids": [1, 2]}]
+
+    seen_prompts = []
+
+    class FakeJudgeLLM:
+        def invoke(self, prompt):
+            seen_prompts.append(prompt)
+            return CitationVerification(
+                claim="launched and landed in 1969",
+                cited_chunk_ids=[1, 2],
+                is_supported=True,
+                reasoning="both facts present",
+            )
+
+    system.judge_llm = FakeJudgeLLM()
+
+    verification = system.verify_citations(claims, chunks)
+
+    assert verification.coverage_percentage == 1.0
+    assert "launched July 16, 1969" in seen_prompts[0]
+    assert "landed July 20, 1969" in seen_prompts[0]
 
 
 def test_verify_citations_defaults_to_full_coverage_with_no_claims():
@@ -168,7 +224,7 @@ def test_generate_robust_answer_returns_retrieved_chunks_for_reuse():
         def invoke(self, prompt):
             return CitationVerification(
                 claim="The answer",
-                cited_chunk_id=1,
+                cited_chunk_ids=[1],
                 is_supported=True,
                 reasoning="ok",
             )

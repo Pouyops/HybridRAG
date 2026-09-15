@@ -231,20 +231,39 @@ resume cleanly each time, rather than restarting from scratch.
 
 ## 3. Judge-Validation Scaffold
 
-**Status: built, not yet validated.** `scripts/validate_judge.py --generate`
-ran the default OpenAI pipeline once against all 14 frozen questions and
-wrote `results/judge_validation_template.json`: for each question, the real
+**Status: partially validated (10/14 rows hand-labeled).**
+`scripts/validate_judge.py --generate` ran the default OpenAI pipeline once
+against all 14 frozen questions and wrote
+`results/judge_validation_template.json`: for each question, the real
 generated answer, the judge's own `judge_correctness_score` (and its
-reasoning), and an explicit `human_label: null` field.
+reasoning), and a `human_label` field to fill in by hand.
 
 No human labels were fabricated -- that would defeat the point of
-validating the judge. A human reviewer needs to read each
-question/expected_answer/generated_answer and fill in `human_label` (a
-float 0.0-1.0 on the same scale) by hand; `python scripts/validate_judge.py
---check-agreement` then reports mean absolute error, a near-match rate, and
-Pearson correlation between the judge and the human labels. Run with zero
-labels filled in, it correctly prints "no human labels yet" and exits
-cleanly rather than crashing or inventing a number.
+validating the judge. `python scripts/validate_judge.py --check-agreement`
+reports mean absolute error, a near-match rate, and Pearson correlation
+between the judge and whatever human labels are present; run with zero
+labels filled in, it correctly prints "no human labels yet" rather than
+crashing or inventing a number.
+
+**Real result so far, over the 10 rows a human has labeled:**
+
+```
+Mean absolute error:      0.000
+Near-match rate (<=0.2):  100.0%
+Exact-match rate:         100.0%
+Pearson correlation:      n/a (insufficient variance in labeled sample)
+```
+
+The judge agreed with the human label on all 10 rows labeled so far. Pearson
+correlation is `n/a` because those 10 rows are all cases the pipeline
+answered successfully with `judge_correctness_score = 1.0`, which the human
+also scored 1.0 -- there's no variance yet to correlate. The remaining 4
+rows are the Unanswerable/Ambiguous questions that triggered "Insufficient
+Information" (see below); they don't carry a comparable 0-1
+`judge_correctness_score` to check a human label against, so this 100%
+agreement figure is honestly a validation of the judge's behavior on
+answerable questions only, not a claim that covers the harder fallback
+cases too.
 
 Observed while generating the template (informational, not a validation
 result): all 6 Lookup and all 4 Multi-Hop questions were answered

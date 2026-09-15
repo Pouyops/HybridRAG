@@ -26,19 +26,19 @@ def _make_evaluator(rag_pipeline, judge_responses):
 def test_measure_citation_accuracy_uses_independent_judge_not_generator_self_grade():
     chunks = [Document(page_content="context A", metadata={})]
     claims = [
-        {"claim": "claim one", "chunk_id": 1},
-        {"claim": "claim two", "chunk_id": 1},
+        {"claim": "claim one", "chunk_ids": [1]},
+        {"claim": "claim two", "chunk_ids": [1]},
     ]
 
     evaluator = _make_evaluator(
         rag_pipeline=None,
         judge_responses=[
             CitationVerification(
-                claim="claim one", cited_chunk_id=1, is_supported=True, reasoning="ok"
+                claim="claim one", cited_chunk_ids=[1], is_supported=True, reasoning="ok"
             ),
             CitationVerification(
                 claim="claim two",
-                cited_chunk_id=1,
+                cited_chunk_ids=[1],
                 is_supported=False,
                 reasoning="not supported",
             ),
@@ -75,7 +75,7 @@ class FakeRagPipeline:
         return self._response
 
     def parse_citations(self, answer):
-        return [{"claim": "the answer", "chunk_id": 1}]
+        return [{"claim": "the answer", "chunk_ids": [1]}]
 
 
 def test_run_test_suite_reuses_retrieved_chunks_without_retrieving_again(tmp_path):
@@ -104,7 +104,7 @@ def test_run_test_suite_reuses_retrieved_chunks_without_retrieving_again(tmp_pat
             Score(1.0),  # faithfulness
             Score(1.0),  # retrieval relevance
             CitationVerification(
-                claim="the answer", cited_chunk_id=1, is_supported=True, reasoning="ok"
+                claim="the answer", cited_chunk_ids=[1], is_supported=True, reasoning="ok"
             ),
         ],
     )

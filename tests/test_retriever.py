@@ -1,14 +1,17 @@
+from unittest.mock import patch
+
 from langchain_core.documents import Document
 
 from src.retriever import HybridRetriever
 
 
-def _make_retriever(dense_weight=0.7, sparse_weight=0.3):
+def _make_retriever(dense_weight=0.7, sparse_weight=0.3, use_reranker=True):
     """Build a HybridRetriever without running __init__, so the CrossEncoder
     (which downloads a model from the network) is never loaded."""
     retriever = object.__new__(HybridRetriever)
     retriever.dense_weight = dense_weight
     retriever.sparse_weight = sparse_weight
+    retriever.use_reranker = use_reranker
     return retriever
 
 
@@ -122,3 +125,45 @@ def test_get_relevant_documents_returns_doc_score_pairs():
         "shared chunk",
         "dense only chunk",
     }
+
+
+def test_get_relevant_documents_with_reranker_disabled_skips_cross_encoder():
+    """use_reranker=False must skip .rerank() entirely (no CrossEncoder call)
+    and instead return the top final_k RRF-fused candidates, using the fused
+    score in place of the cross-encoder score."""
+    docs = [Document(page_content=f"chunk {i}", metadata={}) for i in range(5)]
+
+    class ExplodingCrossEncoder:
+        def predict(self, pairs):
+            raise AssertionError("rerank() must not be called when use_reranker=False")
+
+    retriever = _make_retriever(use_reranker=False)
+    retriever.vectorstore = FakeVectorstore(docs)
+    retriever.bm25_retriever = FakeBM25([])
+    retriever.reranker = ExplodingCrossEncoder()
+
+    with patch("src.retriever.settings.final_k", 3):
+        results = retriever.get_relevant_documents("query")
+
+    assert len(results) == 3
+    assert [doc.page_content for doc, _ in results] == ["chunk 0", "chunk 1", "chunk 2"]
+    assert all(isinstance(score, float) for _, score in results)
+
+
+def test_get_relevant_documents_reranker_default_true_unchanged():
+    """Default construction path (use_reranker not passed) must keep using
+    the cross-encoder, matching prior behavior byte-for-byte."""
+    docs = [Document(page_content=f"chunk {i}", metadata={}) for i in range(3)]
+
+    retriever = _make_retriever()  # use_reranker defaults to True
+    assert retriever.use_reranker is True
+
+    retriever.vectorstore = FakeVectorstore(docs)
+    retriever.bm25_retriever = FakeBM25([])
+    retriever.reranker = FakeCrossEncoder()
+
+    with patch("src.retriever.settings.final_k", 2):
+        results = retriever.get_relevant_documents("query")
+
+    # FakeCrossEncoder scores by trailing index, so highest index chunks win.
+    assert [doc.page_content for doc, _ in results] == ["chunk 2", "chunk 1"]

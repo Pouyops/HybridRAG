@@ -6,6 +6,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
+from config import settings
 from src.generator import CitationVerification
 
 
@@ -20,7 +21,7 @@ class SyntheticEvaluator:
     def __init__(self, vectorstore, llm=None):
         self.vectorstore = vectorstore
         self.llm = llm or ChatOpenAI(
-            model="gpt-4o-mini", temperature=0.7
+            model=settings.judge_model, temperature=settings.synthetic_temperature
         )
         self.structured_llm = self.llm.with_structured_output(QAPair)
 

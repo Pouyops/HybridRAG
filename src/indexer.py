@@ -4,9 +4,11 @@ from langchain_chroma import Chroma
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import OpenAIEmbeddings
 
+from config import settings
+
 
 class indexer:
-    def __init__(self, api_key=None, model_name="text-embedding-3-small"):
+    def __init__(self, api_key=None, model_name=settings.embedding_model):
         # OpenAIEmbeddings reads OPENAI_API_KEY from the environment
         # automatically (populated by load_dotenv() in the entry point).
         self.embeddings = OpenAIEmbeddings(model=model_name)

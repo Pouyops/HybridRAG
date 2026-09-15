@@ -2,4 +2,5 @@
 __pycache__/
 chroma_db_*/
 chroma_main_db/
-evaluation_dataset.json
+chroma_ablation_db/
+chroma_judge_validation_db/

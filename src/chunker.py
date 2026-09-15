@@ -2,9 +2,13 @@ from langchain_text_splitters import MarkdownHeaderTextSplitter
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_experimental.text_splitter import SemanticChunker
 
+from config import settings
+
 class Chunker():
-    def __init__(self, embedding_fn):
+    def __init__(self, embedding_fn, chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap):
         self.embedding_fn = embedding_fn
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
 
     def chunk_documents(self, text, metadata, strategy="TokenRecursive"):
         if strategy == "Markdown":
@@ -43,8 +47,8 @@ class Chunker():
 
     def _token_recursive_chunking(self, text, metadata):
         token_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            chunk_size=512,
-            chunk_overlap=50
+            chunk_size=self.chunk_size,
+            chunk_overlap=self.chunk_overlap
         )
         chunks = token_splitter.create_documents([text])
         for chunk in chunks:

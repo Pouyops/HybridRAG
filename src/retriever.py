@@ -3,6 +3,8 @@ import time
 
 from sentence_transformers import CrossEncoder
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
 _RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -34,16 +36,26 @@ class HybridRetriever:
         self,
         vectorstore,
         bm25_retriever,
-        dense_weight=0.7,
-        sparse_weight=0.3,
+        dense_weight=settings.dense_weight,
+        sparse_weight=settings.sparse_weight,
+        use_reranker: bool = True,
     ):
         self.vectorstore = vectorstore
         self.bm25_retriever = bm25_retriever
         self.dense_weight = dense_weight
         self.sparse_weight = sparse_weight
-        self.reranker = _load_cross_encoder(_RERANKER_MODEL)
+        self.use_reranker = use_reranker
+        # Skip the network download entirely when reranking is disabled (e.g.
+        # for the reranker-off ablation arm) — no point paying that cost.
+        self.reranker = _load_cross_encoder(_RERANKER_MODEL) if use_reranker else None
 
-    def retrieve_and_fuse(self, query, retrieval_depth=60, rrf_k=60, top_n=20):
+    def retrieve_and_fuse(
+        self,
+        query,
+        retrieval_depth=settings.retrieval_depth,
+        rrf_k=settings.rrf_k,
+        top_n=settings.top_n,
+    ):
         """
         retrieval_depth: how many candidates to pull from each of the dense/
         sparse retrievers before fusion. rrf_k: the smoothing constant in the
@@ -77,7 +89,7 @@ class HybridRetriever:
 
         return [item for item in ranked_results[:top_n]]
 
-    def rerank(self, query, candidates, final_k=5):
+    def rerank(self, query, candidates, final_k=settings.final_k):
         """Returns [(doc, cross_encoder_score), ...] sorted by score, so callers
         can use the score as a real relevance signal instead of discarding it."""
         pairs = [[query, doc["doc"].page_content] for doc in candidates]
@@ -89,5 +101,12 @@ class HybridRetriever:
         return [(item["doc"], float(score)) for item, score in scored_docs[:final_k]]
 
     def get_relevant_documents(self, query):
-        candidates = self.retrieve_and_fuse(query, top_n=20)
-        return self.rerank(query, candidates, final_k=5)
+        candidates = self.retrieve_and_fuse(query, top_n=settings.top_n)
+        if not self.use_reranker:
+            # Return the top final_k straight from RRF fusion, using the
+            # fused score in place of the cross-encoder score so the
+            # (doc, score) contract stays intact for downstream callers
+            # (e.g. score_confidence's rerank_scores parameter).
+            top = candidates[: settings.final_k]
+            return [(item["doc"], float(item["score"])) for item in top]
+        return self.rerank(query, candidates, final_k=settings.final_k)

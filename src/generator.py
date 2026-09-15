@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from config import settings
+
 
 def _normalize_cross_encoder_score(score: float) -> float:
     """Squash a raw cross-encoder logit into (0, 1) via a sigmoid."""
@@ -35,10 +37,10 @@ class ConfidenceScore(BaseModel):
 
 
 class AdvancedRAGSystem:
-    def __init__(self, llm, retriever):
+    def __init__(self, llm, retriever, confidence_threshold=settings.confidence_threshold):
         self.llm = llm
         self.retriever = retriever
-        self.confidence_threshold = 0.75
+        self.confidence_threshold = confidence_threshold
         self.judge_llm = llm.with_structured_output(CitationVerification)
 
     def parse_citations(self, answer: str) -> List[Dict[str, Any]]:

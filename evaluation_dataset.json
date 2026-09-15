@@ -1,0 +1,118 @@
+[
+    {
+        "question": "Who was the commander of the backup crew for Apollo 11?",
+        "expected_answer": "Jim Lovell",
+        "question_type": "Lookup",
+        "source_chunks": [
+            "./data/02-crew.md"
+        ]
+    },
+    {
+        "question": "What was the name of the Lunar Module used in the Apollo 11 mission?",
+        "expected_answer": "Eagle",
+        "question_type": "Lookup",
+        "source_chunks": [
+            "./data\\03-spacecraft.md"
+        ]
+    },
+    {
+        "question": "What were the names of the three astronauts who were part of the Apollo 11 mission?",
+        "expected_answer": "Neil Armstrong, Buzz Aldrin, Michael Collins",
+        "question_type": "Lookup",
+        "source_chunks": [
+            "./data/README.md"
+        ]
+    },
+    {
+        "question": "What phrase did Neil Armstrong say upon placing his boot on the lunar surface?",
+        "expected_answer": "That's one small step for man, one giant leap for mankind.",
+        "question_type": "Lookup",
+        "source_chunks": [
+            "./data/05-landing-and-moonwalk.md"
+        ]
+    },
+    {
+        "question": "What was the purpose of the descent stage of Eagle during the Apollo 11 mission?",
+        "expected_answer": "The descent stage carried a throttleable engine, landing legs, and most of the consumables, and remained on the Moon permanently, serving as a launch platform for the ascent stage.",
+        "question_type": "Lookup",
+        "source_chunks": [
+            "./data/03-spacecraft.md"
+        ]
+    },
+    {
+        "question": "What time did Armstrong set foot on the lunar surface during the Apollo 11 mission?",
+        "expected_answer": "Approximately 02:56 UTC on July 21, 1969 (10:56 p.m. EDT on July 20).",
+        "question_type": "Lookup",
+        "source_chunks": [
+            "./data/04-timeline.md"
+        ]
+    },
+    {
+        "question": "What were the roles of the Apollo 11 crew members, and how did their contributions lead to the mission's legacy and significance in terms of scientific return and cultural impact?",
+        "expected_answer": "The Apollo 11 crew consisted of Neil Armstrong, who served as the mission commander and was the first human to step onto the lunar surface; Buzz Aldrin, the Lunar Module Pilot, who was the second person to walk on the Moon; and Michael Collins, the Command Module Pilot, who remained in lunar orbit. Armstrong's role was crucial as he took manual control of the Lunar Module during the descent, ensuring a safe landing. Aldrin's expertise in orbital rendezvous and his participation in the lunar walk contributed to the mission's success. The legacy of Apollo 11 includes achieving several firsts, such as the first crewed landing on another world and the collection of lunar samples, which provided scientists with direct evidence about the Moon's composition and supported the giant-impact hypothesis for its formation. Culturally, the mission marked a significant achievement in the Space Race, with Armstrong's famous quote \"one small step for man, one giant leap for mankind\" becoming iconic, symbolizing the potential of large-scale engineering and public investment in science.",
+        "question_type": "Multi-Hop",
+        "source_chunks": [
+            "./data/02-crew.md",
+            "./data/06-legacy.md"
+        ]
+    },
+    {
+        "question": "What were the key events and timeline of the Apollo 11 mission, including the landing on the lunar surface and the subsequent return to Earth?",
+        "expected_answer": "The Apollo 11 mission, launched by NASA, aimed to land humans on the Moon and return them safely to Earth. The mission timeline includes several key events: The lunar module, Eagle, landed on the lunar surface at approximately 02:56 UTC on July 21, 1969, where Neil Armstrong first stepped out and spoke the famous words, followed by Buzz Aldrin joining him about 19 minutes later. They spent roughly two and a half hours outside the Eagle conducting activities on the Moon. The ascent stage of Eagle lifted off from the lunar surface at approximately 17:54 UTC on the same day, redocking with the Command Module, Columbia, at around 21:35 UTC. After spending a few hours in lunar orbit, Columbia's main engine fired for Trans-Earth Injection on July 22, 1969, initiating the return journey to Earth. The Command Module separated from the Service Module and reentered Earth's atmosphere, splashing down in the Pacific Ocean on July 24, 1969, at approximately 16:50 UTC, where the crew was recovered by the USS Hornet and placed in a mobile quarantine facility.",
+        "question_type": "Multi-Hop",
+        "source_chunks": [
+            "./data\\README.md",
+            "./data/04-timeline.md"
+        ]
+    },
+    {
+        "question": "What were the roles of the Lunar Module Eagle and the Command and Service Module Columbia during the Apollo 11 mission, and how did their designs reflect their specific functions?",
+        "expected_answer": "The Lunar Module Eagle and the Command and Service Module Columbia played crucial but distinct roles during the Apollo 11 mission. Eagle was designed specifically for lunar landing and ascent, operating in the vacuum of space and on the lunar surface. It had no aerodynamic shape or heat shield, as it was never intended to fly through an atmosphere. Its descent stage included a throttleable engine and landing legs, allowing it to land on the Moon, while the ascent stage housed the crew cabin and an engine to lift the astronauts back to lunar orbit. In contrast, Columbia served as the mothership that carried all three astronauts from Earth to lunar orbit and back. It consisted of a cone-shaped Command Module, which housed the crew and flight controls, and a cylindrical Service Module that contained the main propulsion engine and supplies. Only the Command Module returned to Earth, while the Service Module was jettisoned before reentry. Thus, the designs of Eagle and Columbia were tailored to their specific missions: Eagle for lunar operations and Columbia for travel to and from lunar orbit.",
+        "question_type": "Multi-Hop",
+        "source_chunks": [
+            "./data\\03-spacecraft.md",
+            "./data\\03-spacecraft.md"
+        ]
+    },
+    {
+        "question": "What were the roles of the Apollo 11 crew members during the mission, and which spacecraft did each of them operate or remain in during the lunar landing?",
+        "expected_answer": "During the Apollo 11 mission, the crew consisted of Neil Armstrong, Buzz Aldrin, and Michael Collins. Neil Armstrong and Buzz Aldrin were the two astronauts who descended to the lunar surface in the Lunar Module, named Eagle, where Armstrong famously took the first steps on the Moon. Michael Collins remained in lunar orbit aboard the Command and Service Module, named Columbia, while Armstrong and Aldrin conducted their moonwalk and surface activities.",
+        "question_type": "Multi-Hop",
+        "source_chunks": [
+            "./data\\README.md",
+            "./data/03-spacecraft.md"
+        ]
+    },
+    {
+        "question": "What were the exact coordinates of the landing site of Apollo 11 on the Moon?",
+        "expected_answer": "The exact coordinates of the landing site of Apollo 11 on the Moon are not provided in the text.",
+        "question_type": "Unanswerable",
+        "source_chunks": [
+            "./data/04-timeline.md"
+        ]
+    },
+    {
+        "question": "What was the total weight of the Eagle lunar module at launch?",
+        "expected_answer": "The text does not provide information about the total weight of the Eagle lunar module at launch.",
+        "question_type": "Unanswerable",
+        "source_chunks": [
+            "./data/03-spacecraft.md"
+        ]
+    },
+    {
+        "question": "What were the main components involved in the mission described?",
+        "expected_answer": "The question cannot be answered as asked because it is too vague and does not specify which mission is being referred to. Clarification is needed regarding the specific mission or context to provide an accurate answer about the components involved.",
+        "question_type": "Ambiguous",
+        "source_chunks": [
+            "./data\\03-spacecraft.md"
+        ]
+    },
+    {
+        "question": "What significant event occurred during a notable mission involving a spacecraft and a crew?",
+        "expected_answer": "The question cannot be answered as asked because it lacks specific details about which mission, spacecraft, or crew is being referred to. Clarification is needed regarding the specific mission or context to provide an accurate answer.",
+        "question_type": "Ambiguous",
+        "source_chunks": [
+            "./data/README.md"
+        ]
+    }
+]

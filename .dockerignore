@@ -1,0 +1,14 @@
+.env
+.git
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+chroma_db_*/
+chroma_main_db/
+evaluation_dataset.json
+.claude/
+README.md
+ROADMAP.md
+docs/
+tests/

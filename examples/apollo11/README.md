@@ -1,6 +1,6 @@
 # Demo Corpus: Apollo 11 Moon Landing
 
-The corpus lives in [`data/`](../data/). This description is kept here, outside `data/`, because every file under the data directory is indexed as retrievable content.
+The corpus lives in [`data/`](data/). This description is kept here, outside `data/`, because every file under the data directory is indexed as retrievable content.
 
 This is a small, original, factual corpus written for this project's Hybrid RAG demo. It was composed from general knowledge specifically for this repository — it is not scraped, copied, or adapted from Wikipedia or any other single source. It replaces the earlier fictional demo document ("The Silence at Ridge 42") with real-world content so retrieval and citation behavior can be evaluated against verifiable facts, including questions that require combining information from two different files (multi-hop questions).
 

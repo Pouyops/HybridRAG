@@ -162,3 +162,37 @@ def test_split_counts_sums_to_requested_total():
         "c": 8,
         "d": 7,
     }
+
+
+def test_evidence_ranks_finds_first_chunk_containing_each_snippet():
+    from src.evaluator import evidence_ranks
+
+    chunks = [
+        Document(page_content="Nothing relevant here.", metadata={}),
+        Document(page_content="The GET, HEAD,\n  OPTIONS, and TRACE methods are SAFE.", metadata={}),
+        Document(page_content="the get, head, options, and trace methods again", metadata={}),
+    ]
+
+    ranks = evidence_ranks(
+        chunks, ["GET, HEAD, OPTIONS, and TRACE methods", "not in any chunk"]
+    )
+
+    # Matching ignores case and whitespace differences; the first hit wins.
+    assert ranks == [2, None]
+
+
+def test_retrieval_scores_distinguishes_partial_and_full_evidence():
+    from src.evaluator import retrieval_scores
+
+    partial = retrieval_scores([3, None])
+    assert partial == {
+        "hit@1": 0.0,
+        "hit@k": 1.0,
+        "full@k": 0.0,
+        "evidence_recall": 0.5,
+        "reciprocal_rank": 1 / 3,
+    }
+
+    assert retrieval_scores([1, 2])["full@k"] == 1.0
+    assert retrieval_scores([1, 2])["hit@1"] == 1.0
+    assert retrieval_scores([None])["reciprocal_rank"] == 0.0

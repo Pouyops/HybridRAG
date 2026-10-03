@@ -1,5 +1,6 @@
 import json
 import random
+import re
 from typing import cast
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -8,6 +9,40 @@ from pydantic import BaseModel, Field
 
 from config import settings
 from src.generator import CitationVerification
+
+
+def _normalize_for_match(text):
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def evidence_ranks(chunks, evidence):
+    """For each evidence string, the 1-based rank of the first chunk whose
+    text contains it (whitespace- and case-insensitive), or None if no chunk
+    does. This is the objective retrieval signal: it needs no LLM judge, only
+    a gold passage per question."""
+    normalized = [_normalize_for_match(c.page_content) for c in chunks]
+    ranks = []
+    for snippet in evidence:
+        needle = _normalize_for_match(snippet)
+        ranks.append(
+            next((i for i, text in enumerate(normalized, start=1) if needle in text), None)
+        )
+    return ranks
+
+
+def retrieval_scores(ranks):
+    """Per-question retrieval metrics from evidence_ranks() output:
+    hit@1 / hit@k (any evidence retrieved), full@k (all evidence retrieved,
+    which is what a multi-hop question needs), evidence recall, and
+    reciprocal rank of the first evidence-bearing chunk."""
+    found = [r for r in ranks if r is not None]
+    return {
+        "hit@1": float(1 in found),
+        "hit@k": float(bool(found)),
+        "full@k": float(len(found) == len(ranks)),
+        "evidence_recall": len(found) / len(ranks),
+        "reciprocal_rank": 1.0 / min(found) if found else 0.0,
+    }
 
 
 def _split_counts(total, fractions):
@@ -114,7 +149,7 @@ class SyntheticEvaluator:
         result.source_chunks = [source]
         return result
 
-    def build_dataset(self, total_questions=50):
+    def build_dataset(self, total_questions=50, output_path="evaluation_dataset.json"):
         dataset = []
         distribution = _split_counts(
             total_questions,
@@ -134,7 +169,7 @@ class SyntheticEvaluator:
                 except Exception:
                     print(f"Generation failed for a {func.__name__} prompt. Skipping.")
 
-        with open("evaluation_dataset.json", "w") as f:
+        with open(output_path, "w") as f:
             json.dump(dataset, f, indent=4)
 
         return dataset

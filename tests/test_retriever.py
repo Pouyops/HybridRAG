@@ -218,3 +218,15 @@ def test_rerank_with_no_candidates_returns_empty_without_calling_model():
     retriever.reranker = ExplodingCrossEncoder()
 
     assert retriever.rerank("query", []) == []
+
+
+def test_injected_reranker_is_used_without_loading_a_model():
+    sentinel = FakeCrossEncoder()
+
+    with patch("src.retriever._load_cross_encoder") as load:
+        retriever = HybridRetriever(
+            vectorstore=None, bm25_retriever=None, use_reranker=True, reranker=sentinel
+        )
+
+    load.assert_not_called()
+    assert retriever.reranker is sentinel

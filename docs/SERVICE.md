@@ -20,7 +20,8 @@ startup window. Startup time is logged to the console.
 
 Requires `OPENAI_API_KEY` in a `.env` file at the repo root (see `.env`,
 gitignored). Optionally set `DATA_DIR` to point at a different documents
-directory; it defaults to `./data/`.
+directory; it defaults to `./data/`, which `python scripts/fetch_corpus.py`
+populates with the HTTP RFC corpus (run it once before starting the service).
 
 ### Endpoints
 

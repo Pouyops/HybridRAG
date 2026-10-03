@@ -204,8 +204,8 @@ def run_strategy_comparison(
 
 
 DEFAULT_QUERY = (
-    "Who was the commander of Apollo 11, and what did he do during the final "
-    "phase of the lunar landing?"
+    "When may a cache reuse a stored response without contacting the origin "
+    "server, and how does it decide how long the response stays fresh?"
 )
 
 
@@ -235,9 +235,10 @@ def parse_args():
         "--regenerate-eval-set",
         action="store_true",
         help=(
-            "Regenerate evaluation_dataset.json via SyntheticEvaluator before "
-            "running the strategy comparison. By default the committed, "
-            "frozen evaluation_dataset.json is reused as-is so results stay "
+            "Generate a synthetic evaluation set via SyntheticEvaluator "
+            "(written to evaluation_dataset_synthetic.json, never over the "
+            "curated set) and run the strategy comparison on it. By default the "
+            "committed, hand-curated evaluation_dataset.json is used so results stay "
             "comparable run over run. Chunk selection is seeded "
             "(random.seed(42)) for reproducibility, but the LLM's phrasing "
             "of each question/answer is still not perfectly deterministic "
@@ -274,7 +275,10 @@ if __name__ == "__main__":
     subset_all_documents = all_documents[:50]
 
     if not subset_all_documents:
-        print(f"No documents loaded. Please add files to the {dataset_path} directory.")
+        print(
+            f"No documents loaded from {dataset_path}. Run `python scripts/fetch_corpus.py` "
+            "to download the default corpus, or pass --data-dir."
+        )
     else:
         print("--- Testing Single Query Execution ---")
         chunker = Chunker(embedding_fn=None)
@@ -298,6 +302,9 @@ if __name__ == "__main__":
 
         dataset_path = "evaluation_dataset.json"
         if args.regenerate_eval_set:
+            # The committed set is hand-curated with gold evidence passages;
+            # a synthetic set goes to its own file so it can't clobber it.
+            dataset_path = "evaluation_dataset_synthetic.json"
             print("\n--- Regenerating Synthetic Evaluation Dataset ---")
             # Seeds which chunks get sampled for question generation, so a
             # future regeneration selects the same source chunks. The LLM's
@@ -306,7 +313,7 @@ if __name__ == "__main__":
             # control even at temperature 0.
             random.seed(42)
             synthetic_evaluator = SyntheticEvaluator(vectorstore=vectorstore, llm=judge_llm)
-            synthetic_evaluator.build_dataset(total_questions=15)
+            synthetic_evaluator.build_dataset(total_questions=15, output_path=dataset_path)
             print(f"Dataset generated and saved to {dataset_path}")
         elif not os.path.exists(dataset_path):
             raise FileNotFoundError(

@@ -4,6 +4,8 @@
 
 A retrieval-augmented generation pipeline that combines dense and BM25 retrieval, reranks with a cross-encoder, and checks its own citations before it answers. If it cannot back an answer with the retrieved text, it says so instead of guessing.
 
+The default corpus is the IETF HTTP standards: RFC 9110 (Semantics), RFC 9111 (Caching) and RFC 9112 (HTTP/1.1), about 92,000 words in total. That makes the system an HTTP standards assistant for backend and API developers. It answers questions like "When may a cache reuse a stored response?" or "Why must a proxy strip Content-Length when Transfer-Encoding is present?" with citations to the relevant passages, and declines questions the standards don't cover.
+
 It runs as a CLI, a FastAPI service, or a Streamlit app, and includes an evaluation harness (LLM-as-a-judge, a frozen test set, repeated runs, and an ablation study).
 
 ![RAG pipeline flow graph](assets/flowgraph.png)
@@ -31,6 +33,7 @@ Requires Python 3.11 (the version used by CI and the Docker image) and an OpenAI
 ```bash
 pip install -r requirements.txt
 echo "OPENAI_API_KEY=sk-..." > .env
+python scripts/fetch_corpus.py      # downloads RFC 9110/9111/9112 into data/
 ```
 
 The first run downloads the cross-encoder model (~90 MB) from Hugging Face.
@@ -38,7 +41,7 @@ The first run downloads the cross-encoder model (~90 MB) from Hugging Face.
 ### Command line
 
 ```bash
-python main.py --query "Who was the commander of Apollo 11?"
+python main.py --query "What must a 304 Not Modified response include?"
 ```
 
 `main.py` indexes `--data-dir` (default `./data/`), answers `--query` and prints the response. It then benchmarks all three chunking strategies against the frozen evaluation set, which makes many LLM calls; see [Evaluation](#evaluation).
@@ -46,16 +49,16 @@ python main.py --query "Who was the commander of Apollo 11?"
 | Flag | Default | Purpose |
 |---|---|---|
 | `--data-dir` | `./data/` | Directory of documents to index |
-| `--query` | built-in Apollo 11 question | Question to answer |
+| `--query` | built-in caching question | Question to answer |
 | `--runs N` | `1` | Repeat the strategy comparison N times and report mean ± std |
-| `--regenerate-eval-set` | off | Rebuild `evaluation_dataset.json` instead of reusing the committed one |
+| `--regenerate-eval-set` | off | Generate a synthetic question set (`evaluation_dataset_synthetic.json`) and benchmark on that instead of the curated set |
 
 ### API service
 
 ```bash
 uvicorn app:app --reload
 curl -X POST localhost:8000/query -H 'Content-Type: application/json' \
-     -d '{"query": "Who stayed in lunar orbit during Apollo 11?"}'
+     -d '{"query": "Which HTTP methods are idempotent?"}'
 ```
 
 | Endpoint | Returns |
@@ -80,7 +83,7 @@ This shows the answer, the confidence breakdown, any flagged citations, and the 
 docker compose up --build   # API on :8000, Streamlit on :8501
 ```
 
-Both containers read `.env` at runtime and mount `./data` read-only. Secrets are never baked into the image.
+Run `python scripts/fetch_corpus.py` on the host first. Both containers read `.env` at runtime and mount `./data` read-only. Secrets are never baked into the image.
 
 ### As a library
 
@@ -88,7 +91,7 @@ Both containers read `.env` at runtime and mount `./data` read-only. Secrets are
 from src.pipeline import build_pipeline
 
 rag = build_pipeline(openai_api_key="sk-...", data_dir="./data/")
-result = rag.generate_robust_answer("When did Apollo 11 land?")
+result = rag.generate_robust_answer("How does s-maxage interact with max-age?")
 
 if result["status"] == "Success":
     print(result["answer"])               # answer text with [n] citations
@@ -116,29 +119,42 @@ DENSE_WEIGHT=0.5 SPARSE_WEIGHT=0.5 FINAL_K=8 uvicorn app:app
 
 [`docs/SERVICE.md`](docs/SERVICE.md) explains each setting and covers the service layer in more detail.
 
-## Demo corpus
+## Corpus
 
-`data/` holds six short, original Markdown files about the Apollo 11 mission. The files reference each other, so some questions need facts from two of them. [`docs/CORPUS.md`](docs/CORPUS.md) describes each file. The description is kept outside `data/` because every file in that directory gets indexed. To use your own documents, point `--data-dir` or `DATA_DIR` at another directory.
+`python scripts/fetch_corpus.py` downloads the HTTP Working Group's HTML rendering of the three RFCs and converts each one to Markdown. The text itself is unchanged. Numbered sections become headings, so Markdown-header chunking splits on real section boundaries, and ABNF and examples become code blocks. The table of contents and index are dropped. The files are gitignored rather than committed: the RFC text belongs to the IETF Trust, and the script reproduces it exactly.
+
+Why this corpus? It is long (RFC 9110 alone is about 66,000 words), normative, and dense with cross-references between sections and between documents. Many real questions need two passages, and users' vocabulary often differs from the spec's ("resume a download" means `Range` plus `If-Range`). That is the situation hybrid retrieval and reranking are meant for, and a small toy corpus can't test it.
+
+To use your own documents, point `--data-dir` or `DATA_DIR` at another directory. Every `.md`, `.txt`, `.html` and `.pdf` file there is indexed. The original Apollo 11 demo corpus is kept in [`examples/apollo11/`](examples/apollo11/).
 
 ## Evaluation
 
-- `main.py` compares the three chunking strategies. A judge LLM scores each answer for **correctness**, **faithfulness**, **retrieval relevance** and **citation accuracy**. Each claim is re-judged independently, without reusing the generator's own verification. The **fallback rate** is the share of questions that ended in "Insufficient Information".
-- `scripts/run_ablation.py` compares dense-only, sparse-only and hybrid retrieval, reranker on and off, and three RRF weightings. It saves each result as soon as it finishes, so you can resume an interrupted run with the same command.
-- `scripts/validate_judge.py` writes a template for hand-labelling answers and measures how closely the judge agrees with the human labels.
+`evaluation_dataset.json` holds 32 hand-written questions:
 
-All three scripts use the committed, frozen `evaluation_dataset.json`: 14 synthetic questions (6 lookup, 4 multi-hop, 2 unanswerable, 2 ambiguous). Results from different runs are comparable because the questions never change.
+| Type | Count | Examples |
+|---|---|---|
+| Lookup | 14 | Which methods are safe? What must a 405 response include? |
+| Multi-Hop | 9 | Heuristic caching of a 200 response, which needs RFC 9110 §15.3.1 *and* RFC 9111 §4.2.2 |
+| Unanswerable | 5 | HTTP/2 SETTINGS, WebSocket keys, 429, HSTS, QPACK: plausible but not in these RFCs |
+| Ambiguous | 4 | "How long can it be cached?" |
 
-Most recent recorded results (3 runs, `gpt-4o-mini` as generator and judge):
+Every answerable question cites its RFC sections and includes verbatim **evidence** passages, so retrieval can be scored exactly, without an LLM judge.
 
-| Strategy | Correctness | Faithfulness | Retrieval relevance | Citation accuracy | Fallback rate |
-|---|---|---|---|---|---|
-| TokenRecursive | 0.997 ± 0.005 | 1.000 ± 0.000 | 0.983 ± 0.005 | 0.975 ± 0.000 | 0.286 ± 0.000 |
-| Markdown\* | 0.997 ± 0.005 | 1.000 ± 0.000 | 0.980 ± 0.000 | 0.978 ± 0.002 | 0.286 ± 0.000 |
-| Semantic | 1.000 ± 0.000 | 1.000 ± 0.000 | 0.979 ± 0.008 | 0.964 ± 0.030 | 0.310 ± 0.034 |
+| Script | Measures | Needs |
+|---|---|---|
+| `scripts/eval_retrieval.py` | hit@1, hit@5, full@5 (all evidence retrieved), recall, MRR and context size, for each chunking strategy × dense/sparse/hybrid × reranker on/off | Embeddings only (BM25 + Markdown runs fully offline) |
+| `main.py` | Chunking strategies compared end to end. A judge LLM scores **correctness**, **faithfulness**, **retrieval relevance** and **citation accuracy**, and the **fallback rate** is reported alongside | Generator + judge LLM |
+| `scripts/run_ablation.py` | Dense vs sparse vs hybrid, reranker on/off and RRF weights, end to end. Resumable | Generator + judge LLM |
+| `scripts/validate_judge.py` | How closely the judge's scores agree with human labels | Generator + judge LLM |
 
-A fallback rate of 0.286 is 4 of 14 questions: exactly the 4 unanswerable and ambiguous questions that are meant to fall back. The other metrics only cover questions that were answered.
+**Measured so far** (BM25 only, 23 answerable questions, top 5 chunks):
 
-\* These numbers predate several bug fixes. At the time, the loader flattened newlines, so the "Markdown" row actually measured one chunk per file, and the corpus description file was indexed alongside the data. The fallback rates have been recomputed with the correct denominator. [`RESULTS.md`](RESULTS.md) has the corrections, the full ablation study with charts, and the caveats. To refresh every number, run `python main.py --runs 3` and `python scripts/run_ablation.py --runs 3`.
+| Chunking | hit@1 | hit@5 | full@5 | full@5, multi-hop only | MRR | Words sent to LLM |
+|---|---|---|---|---|---|---|
+| TokenRecursive | 0.652 | 0.957 | 0.652 | 0.111 | 0.790 | 1,672 |
+| Markdown | 0.739 | 1.000 | 0.783 | 0.444 | 0.851 | 6,020 |
+
+Single-section lookups mostly succeed. Multi-hop questions mostly don't get every passage they need. That is the gap dense retrieval and the reranker should close. The dense, hybrid, reranker and LLM-judged runs need OpenAI and Hugging Face access and are still to be run. [`RESULTS.md`](RESULTS.md) has the full analysis, a BM25 tokenizer fix it motivated, caveats, and the commands for the remaining runs.
 
 ## Project layout
 
@@ -156,13 +172,17 @@ A fallback rate of 0.286 is 4 of 14 questions: exactly the 4 unanswerable and am
 │   ├── evaluator.py         # synthetic QA generation + LLM-as-a-judge metrics
 │   └── pipeline.py          # build_pipeline() factory
 ├── scripts/
+│   ├── fetch_corpus.py      # download + convert the RFC corpus into data/
 │   ├── build_index.py       # build a persisted index from a directory
+│   ├── eval_retrieval.py    # objective retrieval metrics against gold evidence
 │   ├── run_ablation.py      # retrieval / reranker ablation study
 │   └── validate_judge.py    # judge-vs-human agreement scaffold
-├── data/                    # demo corpus (everything here is indexed)
-├── results/                 # benchmark CSVs and charts
+├── data/                    # the indexed corpus (fetched, gitignored)
+├── evaluation_dataset.json  # 32 curated questions with gold evidence
+├── examples/apollo11/       # original small demo corpus + its eval set
+├── results/                 # benchmark CSVs and charts (apollo11/ = archived)
 ├── tests/                   # offline unit tests
-└── docs/                    # service docs and corpus description
+└── docs/                    # service docs
 ```
 
 ## Testing
@@ -172,11 +192,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests cover RRF fusion, reranking, citation parsing and verification, the confidence gate, chunk metadata, index rebuilds, document loading and the evaluation metrics. LLMs, embeddings and the cross-encoder are faked, so no API key or network access is needed. CI runs the suite on every push and pull request to `main`.
+The tests cover RRF fusion, reranking, BM25 tokenization, citation parsing and verification, the confidence gate, chunk metadata, index rebuilds, document loading, the RFC converter and the evaluation metrics. LLMs, embeddings and the cross-encoder are faked, so no API key or network access is needed. CI runs the suite on every push and pull request to `main`.
 
 ## Known limitations
 
-- **Without the reranker, the retrieval-confidence term is not meaningful.** When `use_reranker=False`, raw RRF scores (about 0.01) go into a sigmoid that expects cross-encoder logits, so that term sits near 0.5 for every query. This affects the reranker-off arm of the ablation; see RESULTS.md §2b.
+- **Without the reranker, the retrieval-confidence term is not meaningful.** When `use_reranker=False`, raw RRF scores (about 0.01) go into a sigmoid that expects cross-encoder logits, so that term sits near 0.5 for every query. This affects the reranker-off arm of the ablation.
 - **An answer with no citations gets full citation coverage.** Uncited text is not counted against coverage, so only the retrieval and completeness terms can gate an uncited answer.
 - **Cost estimates are approximate.** `/metrics` counts tokens for one generation call with illustrative `gpt-4o-mini` prices. It does not include the verification and completeness calls each query also makes.
-- **The demo corpus is small.** With a few dozen chunks at most, retrieval mode and fusion weights barely change the results. The ablation needs a larger, more varied corpus to show real differences.
+- **Markdown-header chunks are uneven on real documents.** Some RFC sections are about 4,000 words long ("9.3. Method Definitions"). Splitting only on `#`/`##`/`###` makes those single chunks, which inflates retrieval hit rates and the size of the generator's prompt.
+- **The evaluation set is small.** With 23 answerable questions, one question is worth about 4 points of hit@k, so treat small differences as noise.

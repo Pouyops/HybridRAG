@@ -39,6 +39,7 @@ class HybridRetriever:
         dense_weight=settings.dense_weight,
         sparse_weight=settings.sparse_weight,
         use_reranker: bool = True,
+        reranker=None,
     ):
         self.vectorstore = vectorstore
         self.bm25_retriever = bm25_retriever
@@ -47,7 +48,11 @@ class HybridRetriever:
         self.use_reranker = use_reranker
         # Skip the network download entirely when reranking is disabled (e.g.
         # for the reranker-off ablation arm) — no point paying that cost.
-        self.reranker = _load_cross_encoder(_RERANKER_MODEL) if use_reranker else None
+        # Callers comparing many configs can pass one preloaded `reranker`
+        # instead of loading the model once per retriever.
+        if use_reranker and reranker is None:
+            reranker = _load_cross_encoder(_RERANKER_MODEL)
+        self.reranker = reranker if use_reranker else None
 
     def retrieve_and_fuse(
         self,

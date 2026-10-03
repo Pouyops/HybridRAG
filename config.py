@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     use_reranker: bool = False
     cross_encoder_confidence: bool = True
     # Ask the LLM to split multi-part questions into sub-questions and
-    # retrieve for each (src/retriever.py: DecomposingRetriever).
-    decompose_queries: bool = True
+    # retrieve for each (src/retriever.py: DecomposingRetriever). Off by
+    # default: on the RFC set it did not raise multi-hop full@5 beyond noise
+    # and lowered hit@5 and MRR in most configurations (RESULTS.md).
+    decompose_queries: bool = False
     max_subquestions: int = 3
 
     # --- Generation / confidence (src/generator.py: AdvancedRAGSystem) ---

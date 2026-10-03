@@ -42,8 +42,11 @@ class Settings(BaseSettings):
     # --- Chunking (src/chunker.py: Chunker) ---
     chunk_size: int = 512
     chunk_overlap: int = 50
-    # Default strategy for the service and build_pipeline().
-    chunking_strategy: str = "TokenRecursive"
+    # Default strategy for the service and build_pipeline(). Markdown (with
+    # the cap below) had the best end-to-end correctness, retrieval relevance
+    # and citation accuracy on the RFC set (RESULTS.md). On documents without
+    # Markdown headings it degrades to markdown_max_tokens-sized chunks.
+    chunking_strategy: str = "Markdown"
     # Markdown-header sections longer than this many tokens are split further
     # (0 disables the cap). Uncapped, some RFC sections are ~5k tokens.
     markdown_max_tokens: int = 800

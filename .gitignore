@@ -4,3 +4,5 @@ chroma_db_*/
 chroma_main_db/
 chroma_ablation_db/
 chroma_judge_validation_db/
+# Corpus fetched by scripts/fetch_corpus.py (IETF RFC text; not redistributed here)
+data/rfc*.md

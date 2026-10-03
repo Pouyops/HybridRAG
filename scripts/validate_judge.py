@@ -1,7 +1,7 @@
 """Judge-validation scaffold -- NOT a substitute for real human validation.
 
-`--generate` builds results/judge_validation_template.json: for each of the
-15 frozen evaluation_dataset.json questions, it runs the pipeline once to
+`--generate` builds results/judge_validation_template.json: for each
+frozen evaluation_dataset.json question, it runs the pipeline once to
 get a real generated answer and asks the judge LLM for a correctness score,
 then writes a row with an explicit, empty `human_label` field.
 

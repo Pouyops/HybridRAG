@@ -1,3 +1,4 @@
+import re
 from collections import defaultdict
 
 from langchain_chroma import Chroma
@@ -5,6 +6,19 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_openai import OpenAIEmbeddings
 
 from config import settings
+
+
+def bm25_tokenize(text):
+    """Lowercase and split on anything that isn't a letter or digit, keeping
+    hyphenated terms such as "If-None-Match" or "max-age" as one token.
+
+    BM25Retriever's default is a bare str.split(), which is case-sensitive
+    and leaves punctuation attached, so a query for `Vary: *` never matches
+    `"Vary"` or `Vary,` in the text. On the RFC evaluation set this
+    tokenizer raised BM25 evidence recall@5 from 0.74 to 0.80
+    (TokenRecursive) and from 0.78 to 0.89 (Markdown); see RESULTS.md.
+    """
+    return re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", text.lower())
 
 
 class indexer:
@@ -39,11 +53,18 @@ class indexer:
     def create_indexes(self, chunks, persist_directory="./chroma_db"):
         processed_chunks = self._prepare_metadata(chunks)
 
-        vectorstore = Chroma.from_documents(
-            documents=processed_chunks,
-            embedding=self.embeddings,
+        # Chroma.from_documents() appends to whatever collection already lives
+        # in persist_directory, so rebuilding into the same directory (every
+        # app/Streamlit/main.py restart) would duplicate the whole corpus.
+        # Start from an empty collection so the index mirrors `chunks` exactly.
+        vectorstore = Chroma(
+            embedding_function=self.embeddings,
             persist_directory=persist_directory,
         )
-        bm25_retriever = BM25Retriever.from_documents(processed_chunks, k=60)
+        vectorstore.reset_collection()
+        vectorstore.add_documents(processed_chunks)
+        bm25_retriever = BM25Retriever.from_documents(
+            processed_chunks, k=settings.retrieval_depth, preprocess_func=bm25_tokenize
+        )
 
         return vectorstore, bm25_retriever

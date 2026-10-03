@@ -237,3 +237,50 @@ def test_generate_robust_answer_returns_retrieved_chunks_for_reuse():
 
     assert response["status"] == "Success"
     assert response["retrieved_chunks"] == [chunk_a, chunk_b]
+
+
+def test_parse_citations_handles_comma_separated_citations():
+    system = _make_system()
+    answer = "Apollo 11 launched and landed in 1969 [1, 2]. Collins stayed in orbit [3]."
+
+    claims = system.parse_citations(answer)
+
+    assert claims == [
+        {"claim": "Apollo 11 launched and landed in 1969", "chunk_ids": [1, 2]},
+        {"claim": ". Collins stayed in orbit", "chunk_ids": [3]},
+    ]
+
+
+def test_score_confidence_clamps_out_of_range_completeness():
+    system = _make_system()
+    system.confidence_threshold = 0.75
+
+    class FakeLLM:
+        def invoke(self, prompt):
+            class Response:
+                content = "8"
+
+            return Response()
+
+    system.llm = FakeLLM()
+
+    score = system.score_confidence(
+        query="q", answer="a", retrieved_chunks=[], coverage=0.0, rerank_scores=[]
+    )
+
+    assert score.answer_completeness == 1.0
+    assert score.composite_score == 0.3
+    assert score.is_confident is False
+
+
+def test_unknown_response_lists_suggested_documents_in_rank_order():
+    system = _make_system()
+    chunks = [
+        Document(page_content="x", metadata={"filepath": "b.md"}),
+        Document(page_content="y", metadata={"filepath": "a.md"}),
+        Document(page_content="z", metadata={"filepath": "b.md"}),
+    ]
+
+    response = system._format_unknown_response("q", "reason", chunks)
+
+    assert response["suggested_documents"] == ["b.md", "a.md"]

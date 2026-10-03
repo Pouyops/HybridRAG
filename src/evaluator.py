@@ -1,5 +1,6 @@
 import json
 import random
+import re
 from typing import cast
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -8,6 +9,53 @@ from pydantic import BaseModel, Field
 
 from config import settings
 from src.generator import CitationVerification
+
+
+def _normalize_for_match(text):
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def evidence_ranks(chunks, evidence):
+    """For each evidence string, the 1-based rank of the first chunk whose
+    text contains it (whitespace- and case-insensitive), or None if no chunk
+    does. This is the objective retrieval signal: it needs no LLM judge, only
+    a gold passage per question."""
+    normalized = [_normalize_for_match(c.page_content) for c in chunks]
+    ranks = []
+    for snippet in evidence:
+        needle = _normalize_for_match(snippet)
+        ranks.append(
+            next((i for i, text in enumerate(normalized, start=1) if needle in text), None)
+        )
+    return ranks
+
+
+def retrieval_scores(ranks):
+    """Per-question retrieval metrics from evidence_ranks() output:
+    hit@1 / hit@k (any evidence retrieved), full@k (all evidence retrieved,
+    which is what a multi-hop question needs), evidence recall, and
+    reciprocal rank of the first evidence-bearing chunk."""
+    found = [r for r in ranks if r is not None]
+    return {
+        "hit@1": float(1 in found),
+        "hit@k": float(bool(found)),
+        "full@k": float(len(found) == len(ranks)),
+        "evidence_recall": len(found) / len(ranks),
+        "reciprocal_rank": 1.0 / min(found) if found else 0.0,
+    }
+
+
+def _split_counts(total, fractions):
+    """Split `total` into integer counts proportional to `fractions` that sum
+    to exactly `total` (largest-remainder rounding). Plain int() truncation
+    loses questions: 15 at 40/30/15/15% would give 6+4+2+2 = 14."""
+    exact = {key: total * frac for key, frac in fractions.items()}
+    counts = {key: int(value) for key, value in exact.items()}
+    leftover = total - sum(counts.values())
+    by_remainder = sorted(exact, key=lambda key: exact[key] - counts[key], reverse=True)
+    for key in by_remainder[:leftover]:
+        counts[key] += 1
+    return counts
 
 
 class QAPair(BaseModel):
@@ -101,14 +149,17 @@ class SyntheticEvaluator:
         result.source_chunks = [source]
         return result
 
-    def build_dataset(self, total_questions=50):
+    def build_dataset(self, total_questions=50, output_path="evaluation_dataset.json"):
         dataset = []
-        distribution = {
-            self.generate_lookup: int(total_questions * 0.4),
-            self.generate_multihop: int(total_questions * 0.3),
-            self.generate_unanswerable: int(total_questions * 0.15),
-            self.generate_ambiguous: int(total_questions * 0.15),
-        }
+        distribution = _split_counts(
+            total_questions,
+            {
+                self.generate_lookup: 0.4,
+                self.generate_multihop: 0.3,
+                self.generate_unanswerable: 0.15,
+                self.generate_ambiguous: 0.15,
+            },
+        )
 
         for func, count in distribution.items():
             for _ in range(count):
@@ -118,7 +169,7 @@ class SyntheticEvaluator:
                 except Exception:
                     print(f"Generation failed for a {func.__name__} prompt. Skipping.")
 
-        with open("evaluation_dataset.json", "w") as f:
+        with open(output_path, "w") as f:
             json.dump(dataset, f, indent=4)
 
         return dataset
@@ -241,5 +292,10 @@ class RAGEvaluator:
             results["avg_faithfulness"] /= n
             results["avg_retrieval"] /= n
             results["avg_citation_accuracy"] /= n
+
+        # total_runs counts only answered questions, so the fallback rate's
+        # denominator must be answered + failed (every question asked).
+        n_asked = results["total_runs"] + len(results["failures"])
+        results["fallback_rate"] = len(results["failures"]) / n_asked if n_asked else 0.0
 
         return results

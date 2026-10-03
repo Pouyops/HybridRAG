@@ -1,97 +1,203 @@
-# Advanced RAG Pipeline with Hybrid Retrieval & Automated Evaluation
+# HybridRAG
 
 [![CI](https://github.com/Pouyops/HybridRAG/actions/workflows/ci.yml/badge.svg)](https://github.com/Pouyops/HybridRAG/actions/workflows/ci.yml)
 
-An end-to-end, highly robust Retrieval-Augmented Generation (RAG) system built using LangChain, ChromaDB, and OpenAI. This project features multi-strategy document chunking, hybrid retrieval (Dense + Sparse) with Reciprocal Rank Fusion (RRF), Cross-Encoder reranking, citation-verified generation, a FastAPI service + Streamlit demo, Docker packaging, and a rigorous, reproducible evaluation suite — including a retrieval/reranker ablation study — using an LLM-as-a-Judge.
+A retrieval-augmented generation pipeline that combines dense and BM25 retrieval, reranks with a cross-encoder, and checks its own citations before it answers. If it cannot back an answer with the retrieved text, it says so instead of guessing.
 
-![RAG Pipeline Flow Graph](assets/flowgraph.png)
+The default corpus is the IETF HTTP standards: RFC 9110 (Semantics), RFC 9111 (Caching) and RFC 9112 (HTTP/1.1), about 92,000 words in total. That makes the system an HTTP standards assistant for backend and API developers. It answers questions like "When may a cache reuse a stored response?" or "Why must a proxy strip Content-Length when Transfer-Encoding is present?" with citations to the relevant passages, and declines questions the standards don't cover.
 
----
+It runs as a CLI, a FastAPI service, or a Streamlit app, and includes an evaluation harness (LLM-as-a-judge, a frozen test set, repeated runs, and an ablation study).
 
-## 🌟 Key Features
+![RAG pipeline flow graph](assets/flowgraph.png)
 
-* **Multi-Format Document Loader:** Ingests and normalizes text from PDF, HTML, Markdown, and TXT files.
-* **Flexible Chunking:** Supports Recursive Character, Markdown Header, and Semantic chunking.
-* **Hybrid Retrieval & RRF:** Combines semantic (vector) search with keyword-based (BM25) search. Results are fused via Reciprocal Rank Fusion (RRF) and reranked using a Cross-Encoder for higher accuracy. Retrieval depth and the RRF smoothing constant are independent, tunable parameters.
-* **Self-Correcting Generation:** Implements citation verification to ensure the generated answer is grounded in retrieved chunks. Retrieval confidence is derived from the cross-encoder's own relevance scores, not a fixed constant.
-* **Automated Evaluation:** Synthetic QA dataset generation and an independent LLM-as-a-Judge pipeline score Correctness, Faithfulness, Retrieval Relevance, and Citation Accuracy — citation accuracy is judged from the actual chunks an answer used, not copied from the generator's own self-reported confidence.
-* **Served as a real system, not just a script:** a FastAPI service (`POST /query`, `/health`, `/metrics`), a Streamlit demo UI, Docker/Docker Compose packaging, centralized config (`config.py`), and CI running the test suite on every push.
-* **Reproducible evaluation rigor:** a frozen, versioned evaluation set, `--runs N` for mean ± std reporting, and a full retrieval/reranker ablation study — see [`RESULTS.md`](RESULTS.md).
+<sub>The diagram was drawn before the switch from Google to OpenAI embeddings. The dense index now uses OpenAI `text-embedding-3-small`.</sub>
 
----
+## How it works
 
-## 🛠️ Architecture
+| Stage | Module | What happens |
+|---|---|---|
+| Load | `src/loader.py` | Reads `.pdf`, `.html`/`.htm`, `.md` and `.txt` files from a directory (in sorted order) and normalizes whitespace while keeping line breaks. |
+| Chunk | `src/chunker.py` | Splits each document with one of three strategies: `TokenRecursive` (512 tokens, 50 overlap; the default), `Markdown` (by `#`/`##`/`###` headers) or `Semantic` (embedding-distance breakpoints). |
+| Index | `src/indexer.py` | Embeds chunks into a persisted Chroma collection (`text-embedding-3-small`) and builds a BM25 index over the same chunks. Rebuilding into an existing directory replaces the collection, so the index never accumulates duplicates. |
+| Retrieve | `src/retriever.py` | Takes the top 60 hits from each index, fuses them with weighted Reciprocal Rank Fusion, `score = Σ wᵢ / (k + rankᵢ)` (dense 0.7, sparse 0.3, k = 60), keeps the top 20, and reranks those with `cross-encoder/ms-marco-MiniLM-L-6-v2` down to 5. |
+| Generate | `src/generator.py` | Asks the LLM (`gpt-4o-mini`) to answer only from the numbered context blocks and to cite them as `[1]`, `[1][2]` or `[1, 2]`. |
+| Verify | `src/generator.py` | Splits the answer into cited claims and has a judge LLM check each claim against the text of the chunks it cites. |
+| Gate | `src/generator.py` | Computes `0.3 × retrieval + 0.4 × citation coverage + 0.3 × completeness`. Retrieval is the mean sigmoid of the top-3 cross-encoder scores; completeness is LLM-rated and clamped to 0–1. If the result is below 0.75, the pipeline returns an "Insufficient Information" response that lists the most relevant source files instead of an answer. |
 
-1. **Ingestion:** Uses `multiloader` to traverse directories and parse documents.
-2. **Indexing:** Employs `indexer` to generate embeddings and build a Chroma vector store alongside a BM25 sparse index.
-3. **Retrieval:** The `HybridRetriever` fetches candidates from both indices, performs RRF scoring, and reranks via a Cross-Encoder model (optionally skippable — see the ablation study).
-4. **Generation:** The `AdvancedRAGSystem` generates responses with required citations and runs verification steps.
-5. **Evaluation:** The `SyntheticEvaluator` generates testing data, while `RAGEvaluator` benchmarks the system's responses.
-6. **Service:** `app.py` (FastAPI) and `streamlit_app.py` wrap the same pipeline (built once via `src/pipeline.py`) for programmatic and interactive use.
+`src/pipeline.py` wires these stages together. `app.py`, `streamlit_app.py` and `scripts/validate_judge.py` all use it.
 
-All of the above pull their tunable parameters (retrieval weights, chunk size, model names, confidence threshold, ...) from a single source of truth, [`config.py`](config.py) — see [`docs/SERVICE.md`](docs/SERVICE.md#configuration-configpy) for the full list and how to override any of them via environment variables.
+## Quick start
 
----
-
-## 📦 Prerequisites
-
-* Python 3.9+
-* An OpenAI API key
-* Required libraries:
-  ```bash
-  pip install -r requirements.txt
-  ```
-
-## 🚀 Usage
-
-Add an `OPENAI_API_KEY` to a `.env` file in the project root, then run the pipeline against your own documents and question:
+Requires Python 3.11 (the version used by CI and the Docker image) and an OpenAI API key.
 
 ```bash
-python main.py --data-dir ./data --query "Your question here?"
+pip install -r requirements.txt
+echo "OPENAI_API_KEY=sk-..." > .env
+python scripts/fetch_corpus.py      # downloads RFC 9110/9111/9112 into data/
 ```
 
-Both flags are optional — running `python main.py` with no arguments uses `./data/` (a small original Apollo 11 corpus — see [`data/README.md`](data/README.md)) and a built-in sample query. Each run indexes the documents in `--data-dir`, answers `--query` with cited sources, then benchmarks all three chunking strategies against the committed, frozen evaluation set. Two more flags control the evaluation behavior:
+The first run downloads the cross-encoder model (~90 MB) from Hugging Face.
 
-* `--runs N` — repeat the strategy comparison N times and report mean ± std per metric instead of a single number.
-* `--regenerate-eval-set` — regenerate `evaluation_dataset.json` via the synthetic evaluator instead of reusing the frozen, committed one (only needed if you change the corpus or want a fresh set).
+### Command line
 
-For programmatic use, the same building blocks can be composed directly — or just use the factory in `src/pipeline.py`, which is what `app.py` and `streamlit_app.py` do:
+```bash
+python main.py --query "What must a 304 Not Modified response include?"
+```
+
+`main.py` indexes `--data-dir` (default `./data/`), answers `--query` and prints the response. It then benchmarks all three chunking strategies against the frozen evaluation set, which makes many LLM calls; see [Evaluation](#evaluation).
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--data-dir` | `./data/` | Directory of documents to index |
+| `--query` | built-in caching question | Question to answer |
+| `--runs N` | `1` | Repeat the strategy comparison N times and report mean ± std |
+| `--regenerate-eval-set` | off | Generate a synthetic question set (`evaluation_dataset_synthetic.json`) and benchmark on that instead of the curated set |
+
+### API service
+
+```bash
+uvicorn app:app --reload
+curl -X POST localhost:8000/query -H 'Content-Type: application/json' \
+     -d '{"query": "Which HTTP methods are idempotent?"}'
+```
+
+| Endpoint | Returns |
+|---|---|
+| `POST /query` | `answer`, `status`, `confidence` (the score breakdown), `citations` (claims the verifier flagged as unsupported), `latency_ms` |
+| `GET /health` | `{"status": "ok"}` |
+| `GET /metrics` | Request count, median latency, and average estimated cost for this process |
+
+The index is built once at startup. Set `DATA_DIR` to index a different directory.
+
+### Streamlit demo
+
+```bash
+streamlit run streamlit_app.py
+```
+
+This shows the answer, the confidence breakdown, any flagged citations, and the retrieved chunks.
+
+### Docker
+
+```bash
+docker compose up --build   # API on :8000, Streamlit on :8501
+```
+
+Run `python scripts/fetch_corpus.py` on the host first. Both containers read `.env` at runtime and mount `./data` read-only. Secrets are never baked into the image.
+
+### As a library
 
 ```python
 from src.pipeline import build_pipeline
 
-rag_system = build_pipeline(openai_api_key=OPENAI_API_KEY, data_dir="./data/")
-response = rag_system.generate_robust_answer("Your query here?")
-print(response)
+rag = build_pipeline(openai_api_key="sk-...", data_dir="./data/")
+result = rag.generate_robust_answer("How does s-maxage interact with max-age?")
+
+if result["status"] == "Success":
+    print(result["answer"])               # answer text with [n] citations
+    print(result["confidence_metrics"])   # retrieval / coverage / completeness / composite
+    print(result["flagged_citations"])    # claims the verifier rejected
+else:                                     # "Insufficient Information"
+    print(result["reason"], result.get("suggested_documents"))
 ```
 
-### Running as a service
+## Configuration
+
+Every tunable parameter lives in [`config.py`](config.py), a `pydantic-settings` object. You can override any of them with an environment variable or a line in `.env`:
 
 ```bash
-uvicorn app:app --reload        # FastAPI: POST /query, GET /health, GET /metrics
-streamlit run streamlit_app.py  # interactive demo UI
-docker compose up --build       # both, in containers
+DENSE_WEIGHT=0.5 SPARSE_WEIGHT=0.5 FINAL_K=8 uvicorn app:app
 ```
 
-See [`docs/SERVICE.md`](docs/SERVICE.md) for the full API reference, Docker instructions, and the complete `config.py` parameter table.
+| Group | Settings (defaults) |
+|---|---|
+| Retrieval | `dense_weight` 0.7, `sparse_weight` 0.3, `retrieval_depth` 60, `rrf_k` 60, `top_n` 20, `final_k` 5 |
+| Gate | `confidence_threshold` 0.75 |
+| Chunking | `chunk_size` 512, `chunk_overlap` 50 |
+| Models | `generator_model` / `judge_model` `gpt-4o-mini`, `embedding_model` `text-embedding-3-small` |
+| Temperatures | `generator_temperature` 0, `judge_temperature` 0, `synthetic_temperature` 0.7 |
 
-## 📊 Evaluation
+[`docs/SERVICE.md`](docs/SERVICE.md) explains each setting and covers the service layer in more detail.
 
-`main.py` benchmarks all three chunking strategies (TokenRecursive, Markdown, Semantic) against a frozen, versioned 14-question evaluation set, scoring each on correctness, faithfulness, retrieval relevance, and citation accuracy via an LLM-as-a-Judge (`gpt-4o-mini` for both generation and judging). Latest results, 3 runs each (mean ± std):
+## Corpus
 
-| Chunking Strategy | Correctness | Faithfulness | Retrieval Relevance | Citation Accuracy | Fallback Rate |
-|---|---|---|---|---|---|
-| TokenRecursive | 0.997 ± 0.005 | 1.000 ± 0.000 | 0.983 ± 0.005 | 0.975 ± 0.000 | 0.400 ± 0.000 |
-| Markdown | 0.997 ± 0.005 | 1.000 ± 0.000 | 0.980 ± 0.000 | 0.978 ± 0.002 | 0.400 ± 0.000 |
-| Semantic | 1.000 ± 0.000 | 1.000 ± 0.000 | 0.979 ± 0.008 | 0.964 ± 0.030 | 0.452 ± 0.073 |
+`python scripts/fetch_corpus.py` downloads the HTTP Working Group's HTML rendering of the three RFCs and converts each one to Markdown. The text itself is unchanged. Numbered sections become headings, so Markdown-header chunking splits on real section boundaries, and ABNF and examples become code blocks. The table of contents and index are dropped. The files are gitignored rather than committed: the RFC text belongs to the IETF Trust, and the script reproduces it exactly.
 
-**For the full picture — headline findings, a retrieval/reranker ablation study (dense-only vs. sparse-only vs. hybrid, reranker on/off, RRF weight sweep), charts, and honestly-reported caveats — see [`RESULTS.md`](RESULTS.md).** The evaluation set is frozen and committed (`evaluation_dataset.json`) so results are reproducible and comparable run over run, rather than regenerated (and therefore shifting) on every invocation.
+Why this corpus? It is long (RFC 9110 alone is about 66,000 words), normative, and dense with cross-references between sections and between documents. Many real questions need two passages, and users' vocabulary often differs from the spec's ("resume a download" means `Range` plus `If-Range`). That is the situation hybrid retrieval and reranking are meant for, and a small toy corpus can't test it.
 
-## ✅ Testing
+To use your own documents, point `--data-dir` or `DATA_DIR` at another directory. Every `.md`, `.txt`, `.html` and `.pdf` file there is indexed. The original Apollo 11 demo corpus is kept in [`examples/apollo11/`](examples/apollo11/).
 
-Unit tests cover the RRF fusion/reranking math (including the reranker on/off path), citation parsing and verification, chunk metadata assignment, and the document loader — all without calling any external LLM or embedding API, so they also run in CI with no API key required.
+## Evaluation
+
+`evaluation_dataset.json` holds 32 hand-written questions:
+
+| Type | Count | Examples |
+|---|---|---|
+| Lookup | 14 | Which methods are safe? What must a 405 response include? |
+| Multi-Hop | 9 | Heuristic caching of a 200 response, which needs RFC 9110 §15.3.1 *and* RFC 9111 §4.2.2 |
+| Unanswerable | 5 | HTTP/2 SETTINGS, WebSocket keys, 429, HSTS, QPACK: plausible but not in these RFCs |
+| Ambiguous | 4 | "How long can it be cached?" |
+
+Every answerable question cites its RFC sections and includes verbatim **evidence** passages, so retrieval can be scored exactly, without an LLM judge.
+
+| Script | Measures | Needs |
+|---|---|---|
+| `scripts/eval_retrieval.py` | hit@1, hit@5, full@5 (all evidence retrieved), recall, MRR and context size, for each chunking strategy × dense/sparse/hybrid × reranker on/off | Embeddings only (BM25 + Markdown runs fully offline) |
+| `main.py` | Chunking strategies compared end to end. A judge LLM scores **correctness**, **faithfulness**, **retrieval relevance** and **citation accuracy**, and the **fallback rate** is reported alongside | Generator + judge LLM |
+| `scripts/run_ablation.py` | Dense vs sparse vs hybrid, reranker on/off and RRF weights, end to end. Resumable | Generator + judge LLM |
+| `scripts/validate_judge.py` | How closely the judge's scores agree with human labels | Generator + judge LLM |
+
+**Measured so far** (BM25 only, 23 answerable questions, top 5 chunks):
+
+| Chunking | hit@1 | hit@5 | full@5 | full@5, multi-hop only | MRR | Words sent to LLM |
+|---|---|---|---|---|---|---|
+| TokenRecursive | 0.652 | 0.957 | 0.652 | 0.111 | 0.790 | 1,672 |
+| Markdown | 0.739 | 1.000 | 0.783 | 0.444 | 0.851 | 6,020 |
+
+Single-section lookups mostly succeed. Multi-hop questions mostly don't get every passage they need. That is the gap dense retrieval and the reranker should close. The dense, hybrid, reranker and LLM-judged runs need OpenAI and Hugging Face access and are still to be run. [`RESULTS.md`](RESULTS.md) has the full analysis, a BM25 tokenizer fix it motivated, caveats, and the commands for the remaining runs.
+
+## Project layout
+
+```
+├── main.py                  # CLI: single query + chunking-strategy benchmark
+├── app.py                   # FastAPI service
+├── streamlit_app.py         # Streamlit demo
+├── config.py                # all tunable settings
+├── src/
+│   ├── loader.py            # multi-format document loading
+│   ├── chunker.py           # TokenRecursive / Markdown / Semantic chunking
+│   ├── indexer.py           # Chroma + BM25 index construction
+│   ├── retriever.py         # RRF fusion + cross-encoder reranking
+│   ├── generator.py         # cited generation, verification, confidence gate
+│   ├── evaluator.py         # synthetic QA generation + LLM-as-a-judge metrics
+│   └── pipeline.py          # build_pipeline() factory
+├── scripts/
+│   ├── fetch_corpus.py      # download + convert the RFC corpus into data/
+│   ├── build_index.py       # build a persisted index from a directory
+│   ├── eval_retrieval.py    # objective retrieval metrics against gold evidence
+│   ├── run_ablation.py      # retrieval / reranker ablation study
+│   └── validate_judge.py    # judge-vs-human agreement scaffold
+├── data/                    # the indexed corpus (fetched, gitignored)
+├── evaluation_dataset.json  # 32 curated questions with gold evidence
+├── examples/apollo11/       # original small demo corpus + its eval set
+├── results/                 # benchmark CSVs and charts (apollo11/ = archived)
+├── tests/                   # offline unit tests
+└── docs/                    # service docs
+```
+
+## Testing
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
+
+The tests cover RRF fusion, reranking, BM25 tokenization, citation parsing and verification, the confidence gate, chunk metadata, index rebuilds, document loading, the RFC converter and the evaluation metrics. LLMs, embeddings and the cross-encoder are faked, so no API key or network access is needed. CI runs the suite on every push and pull request to `main`.
+
+## Known limitations
+
+- **Without the reranker, the retrieval-confidence term is not meaningful.** When `use_reranker=False`, raw RRF scores (about 0.01) go into a sigmoid that expects cross-encoder logits, so that term sits near 0.5 for every query. This affects the reranker-off arm of the ablation.
+- **An answer with no citations gets full citation coverage.** Uncited text is not counted against coverage, so only the retrieval and completeness terms can gate an uncited answer.
+- **Cost estimates are approximate.** `/metrics` counts tokens for one generation call with illustrative `gpt-4o-mini` prices. It does not include the verification and completeness calls each query also makes.
+- **Markdown-header chunks are uneven on real documents.** Some RFC sections are about 4,000 words long ("9.3. Method Definitions"). Splitting only on `#`/`##`/`###` makes those single chunks, which inflates retrieval hit rates and the size of the generator's prompt.
+- **The evaluation set is small.** With 23 answerable questions, one question is worth about 4 points of hit@k, so treat small differences as noise.

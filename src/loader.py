@@ -13,7 +13,10 @@ class multiloader:
     def _document_loader(self):
         documents = []
         for root, dirs, files in os.walk(self.path):
-            for file in files:
+            # os.walk order is filesystem-dependent; sort so the loaded set
+            # (and any [:max_documents] slice of it) is reproducible.
+            dirs.sort()
+            for file in sorted(files):
                 filepath = os.path.join(root, file)
                 doc = self._process_file(filepath)
                 if doc:
@@ -63,5 +66,12 @@ class multiloader:
         return self._normalize_text(text)
 
     def _normalize_text(self, text):
-        text = re.sub(r"\s+", " ", text)
+        """Collapse runs of spaces/tabs and excess blank lines, but keep line
+        breaks: the Markdown chunker splits on lines starting with "#", and
+        the recursive splitter prefers paragraph boundaries, so flattening
+        everything onto one line would defeat both."""
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = re.sub(r"[^\S\n]+", " ", text)
+        text = re.sub(r" ?\n ?", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()

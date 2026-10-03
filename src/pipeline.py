@@ -40,7 +40,9 @@ def build_pipeline(
     loader = multiloader(data_dir)
     all_documents = loader._document_loader()
     if not all_documents:
-        raise ValueError(f"No documents loaded from {data_dir!r}.")
+        raise ValueError(
+            f"No documents loaded from {data_dir!r}. Run `python scripts/fetch_corpus.py` to download the default corpus."
+        )
     documents = all_documents[:max_documents]
 
     logger.info("Loaded %d document(s) from %s", len(documents), data_dir)

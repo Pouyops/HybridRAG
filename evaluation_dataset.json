@@ -1,118 +1,285 @@
 [
     {
-        "question": "Who was the commander of the backup crew for Apollo 11?",
-        "expected_answer": "Jim Lovell",
+        "id": "L01",
+        "question": "Which HTTP request methods does RFC 9110 define as safe?",
+        "expected_answer": "GET, HEAD, OPTIONS, and TRACE are defined to be safe (essentially read-only: the client does not request or expect any state change on the origin server).",
         "question_type": "Lookup",
-        "source_chunks": [
-            "./data/02-crew.md"
-        ]
+        "source_chunks": ["RFC 9110 §9.2.1"],
+        "evidence": ["the GET, HEAD, OPTIONS, and TRACE methods are defined to be safe"]
     },
     {
-        "question": "What was the name of the Lunar Module used in the Apollo 11 mission?",
-        "expected_answer": "Eagle",
+        "id": "L02",
+        "question": "Which request methods defined in RFC 9110 are idempotent?",
+        "expected_answer": "PUT, DELETE, and the safe request methods (GET, HEAD, OPTIONS, TRACE) are idempotent: multiple identical requests have the same intended effect on the server as a single one.",
         "question_type": "Lookup",
-        "source_chunks": [
-            "./data\\03-spacecraft.md"
-        ]
+        "source_chunks": ["RFC 9110 §9.2.2"],
+        "evidence": ["PUT, DELETE, and safe request methods are idempotent"]
     },
     {
-        "question": "What were the names of the three astronauts who were part of the Apollo 11 mission?",
-        "expected_answer": "Neil Armstrong, Buzz Aldrin, Michael Collins",
+        "id": "L03",
+        "question": "What header field must an origin server send in a 405 (Method Not Allowed) response?",
+        "expected_answer": "It MUST generate an Allow header field listing the target resource's currently supported methods.",
         "question_type": "Lookup",
-        "source_chunks": [
-            "./data/README.md"
-        ]
+        "source_chunks": ["RFC 9110 §15.5.6", "RFC 9110 §10.2.1"],
+        "evidence": ["MUST generate an Allow header field in a 405 response"]
     },
     {
-        "question": "What phrase did Neil Armstrong say upon placing his boot on the lunar surface?",
-        "expected_answer": "That's one small step for man, one giant leap for mankind.",
+        "id": "L04",
+        "question": "What minimum request-line length should HTTP/1.1 senders and recipients support?",
+        "expected_answer": "RFC 9112 recommends that all HTTP senders and recipients support request-line lengths of at least 8000 octets.",
         "question_type": "Lookup",
-        "source_chunks": [
-            "./data/05-landing-and-moonwalk.md"
-        ]
+        "source_chunks": ["RFC 9112 §3"],
+        "evidence": ["request-line lengths of 8000 octets"]
     },
     {
-        "question": "What was the purpose of the descent stage of Eagle during the Apollo 11 mission?",
-        "expected_answer": "The descent stage carried a throttleable engine, landing legs, and most of the consumables, and remained on the Moon permanently, serving as a launch platform for the ascent stage.",
+        "id": "L05",
+        "question": "When a cache derives a heuristic freshness lifetime from the Last-Modified time, what fraction of the elapsed interval is typically used?",
+        "expected_answer": "The heuristic expiration should be no more than some fraction of the interval since Last-Modified; a typical setting is 10%.",
         "question_type": "Lookup",
-        "source_chunks": [
-            "./data/03-spacecraft.md"
-        ]
+        "source_chunks": ["RFC 9111 §4.2.2"],
+        "evidence": ["A typical setting of this fraction might be 10%"]
     },
     {
-        "question": "What time did Armstrong set foot on the lunar surface during the Apollo 11 mission?",
-        "expected_answer": "Approximately 02:56 UTC on July 21, 1969 (10:56 p.m. EDT on July 20).",
+        "id": "L06",
+        "question": "What does the unqualified no-cache response directive require of a cache?",
+        "expected_answer": "The response MUST NOT be used to satisfy any other request without forwarding it to the origin for validation and receiving a successful response. This holds even for caches configured to serve stale responses.",
         "question_type": "Lookup",
-        "source_chunks": [
-            "./data/04-timeline.md"
-        ]
+        "source_chunks": ["RFC 9111 §5.2.2.4"],
+        "evidence": ["MUST NOT be used to satisfy any other request without forwarding it for validation"]
     },
     {
-        "question": "What were the roles of the Apollo 11 crew members, and how did their contributions lead to the mission's legacy and significance in terms of scientific return and cultural impact?",
-        "expected_answer": "The Apollo 11 crew consisted of Neil Armstrong, who served as the mission commander and was the first human to step onto the lunar surface; Buzz Aldrin, the Lunar Module Pilot, who was the second person to walk on the Moon; and Michael Collins, the Command Module Pilot, who remained in lunar orbit. Armstrong's role was crucial as he took manual control of the Lunar Module during the descent, ensuring a safe landing. Aldrin's expertise in orbital rendezvous and his participation in the lunar walk contributed to the mission's success. The legacy of Apollo 11 includes achieving several firsts, such as the first crewed landing on another world and the collection of lunar samples, which provided scientists with direct evidence about the Moon's composition and supported the giant-impact hypothesis for its formation. Culturally, the mission marked a significant achievement in the Space Race, with Armstrong's famous quote \"one small step for man, one giant leap for mankind\" becoming iconic, symbolizing the potential of large-scale engineering and public investment in science.",
+        "id": "L07",
+        "question": "How does the s-maxage response directive interact with max-age and Expires?",
+        "expected_answer": "For a shared cache, the maximum age given by s-maxage overrides the one given by max-age or by the Expires header field.",
+        "question_type": "Lookup",
+        "source_chunks": ["RFC 9111 §5.2.2.10"],
+        "evidence": ["for a shared cache, the maximum age specified by this directive overrides"]
+    },
+    {
+        "id": "L08",
+        "question": "How must a server respond to an HTTP/1.1 request that has no Host header field?",
+        "expected_answer": "With 400 (Bad Request). The same applies to a request with more than one Host field line or an invalid Host value.",
+        "question_type": "Lookup",
+        "source_chunks": ["RFC 9112 §3.2"],
+        "evidence": ["lacks a Host header field"]
+    },
+    {
+        "id": "L09",
+        "question": "Which date format must a sender use when generating HTTP-date timestamps?",
+        "expected_answer": "IMF-fixdate, a fixed-length, GMT-only format such as \"Sun, 06 Nov 1994 08:49:37 GMT\". Recipients must still accept all three HTTP-date formats (IMF-fixdate and the obsolete RFC 850 and asctime formats).",
+        "question_type": "Lookup",
+        "source_chunks": ["RFC 9110 §5.6.7"],
+        "evidence": ["the sender MUST generate those timestamps in the IMF-fixdate format"]
+    },
+    {
+        "id": "L10",
+        "question": "How should a cache interpret an Expires header field whose value is an invalid date such as \"0\"?",
+        "expected_answer": "As a time in the past, i.e. the response is already expired.",
+        "question_type": "Lookup",
+        "source_chunks": ["RFC 9111 §5.3"],
+        "evidence": ["invalid date formats, especially the value \"0\""]
+    },
+    {
+        "id": "L11",
+        "question": "What is the difference between strong and weak comparison of entity tags?",
+        "expected_answer": "Strong comparison: two entity tags match only if neither is weak and their opaque-tags match character by character. Weak comparison: they match if their opaque-tags match, regardless of whether either is tagged weak (W/). So W/\"1\" and \"1\" match weakly but not strongly.",
+        "question_type": "Lookup",
+        "source_chunks": ["RFC 9110 §8.8.3.2"],
+        "evidence": ["regardless of either or both being tagged as \"weak\""]
+    },
+    {
+        "id": "L12",
+        "question": "What is the status of the 418 status code in RFC 9110, and why?",
+        "expected_answer": "418 is marked Unused and reserved in the IANA registry. RFC 2324, an April Fools' RFC, defined it as a joke, and it was deployed widely enough that it can't be assigned to another use for now, though it could be reassigned in the future if 4xx codes run out.",
+        "question_type": "Lookup",
+        "source_chunks": ["RFC 9110 §15.5.19"],
+        "evidence": ["the 418 status code is reserved in the IANA HTTP Status Code Registry"]
+    },
+    {
+        "id": "L13",
+        "question": "What is the only expectation defined for the Expect header field?",
+        "expected_answer": "\"100-continue\", which has no defined parameters.",
+        "question_type": "Lookup",
+        "source_chunks": ["RFC 9110 §10.1.1"],
+        "evidence": ["The only expectation defined by this specification is \"100-continue\""]
+    },
+    {
+        "id": "L14",
+        "question": "What does a 421 (Misdirected Request) response indicate?",
+        "expected_answer": "The request was directed at a server that is unable or unwilling to produce an authoritative response for the target URI, for example because the URI doesn't match an origin the connection is authoritative for.",
+        "question_type": "Lookup",
+        "source_chunks": ["RFC 9110 §15.5.20"],
+        "evidence": ["unable or unwilling to produce an authoritative response for the target URI"]
+    },
+    {
+        "id": "M01",
+        "question": "A browser submits a form with POST and receives a 301 redirect. May it switch to GET for the follow-up request, and which status code should the server use if it wants the method preserved for a permanent redirect?",
+        "expected_answer": "Yes. For historical reasons a user agent MAY change POST to GET after a 301. RFC 9110 says that if this is undesired, the server should use 308 (Permanent Redirect), which indicates that the target resource has been assigned a new permanent URI. (The temporary counterpart is 307, for which the user agent MUST NOT change the method.)",
         "question_type": "Multi-Hop",
-        "source_chunks": [
-            "./data/02-crew.md",
-            "./data/06-legacy.md"
+        "source_chunks": ["RFC 9110 §15.4.2", "RFC 9110 §15.4.9"],
+        "evidence": [
+            "If this behavior is undesired, the 308 (Permanent Redirect) status code can be used instead",
+            "The 308 (Permanent Redirect) status code indicates that the target resource has been assigned a new permanent URI"
         ]
     },
     {
-        "question": "What were the key events and timeline of the Apollo 11 mission, including the landing on the lunar surface and the subsequent return to Earth?",
-        "expected_answer": "The Apollo 11 mission, launched by NASA, aimed to land humans on the Moon and return them safely to Earth. The mission timeline includes several key events: The lunar module, Eagle, landed on the lunar surface at approximately 02:56 UTC on July 21, 1969, where Neil Armstrong first stepped out and spoke the famous words, followed by Buzz Aldrin joining him about 19 minutes later. They spent roughly two and a half hours outside the Eagle conducting activities on the Moon. The ascent stage of Eagle lifted off from the lunar surface at approximately 17:54 UTC on the same day, redocking with the Command Module, Columbia, at around 21:35 UTC. After spending a few hours in lunar orbit, Columbia's main engine fired for Trans-Earth Injection on July 22, 1969, initiating the return journey to Earth. The Command Module separated from the Service Module and reentered Earth's atmosphere, splashing down in the Pacific Ocean on July 24, 1969, at approximately 16:50 UTC, where the crew was recovered by the USS Hornet and placed in a mobile quarantine facility.",
+        "id": "M02",
+        "question": "An origin server answers a GET with 200 OK and a Last-Modified date ten days in the past, but sends no Cache-Control or Expires. May a cache reuse the response without revalidating, and for roughly how long?",
+        "expected_answer": "Yes. 200 is heuristically cacheable, so without explicit cache controls a cache may assign a heuristic freshness lifetime. RFC 9111 suggests no more than a fraction of the time since Last-Modified, typically 10%, which here is about one day.",
         "question_type": "Multi-Hop",
-        "source_chunks": [
-            "./data\\README.md",
-            "./data/04-timeline.md"
+        "source_chunks": ["RFC 9110 §15.3.1", "RFC 9111 §4.2.2"],
+        "evidence": [
+            "A 200 response is heuristically cacheable",
+            "A typical setting of this fraction might be 10%"
         ]
     },
     {
-        "question": "What were the roles of the Lunar Module Eagle and the Command and Service Module Columbia during the Apollo 11 mission, and how did their designs reflect their specific functions?",
-        "expected_answer": "The Lunar Module Eagle and the Command and Service Module Columbia played crucial but distinct roles during the Apollo 11 mission. Eagle was designed specifically for lunar landing and ascent, operating in the vacuum of space and on the lunar surface. It had no aerodynamic shape or heat shield, as it was never intended to fly through an atmosphere. Its descent stage included a throttleable engine and landing legs, allowing it to land on the Moon, while the ascent stage housed the crew cabin and an engine to lift the astronauts back to lunar orbit. In contrast, Columbia served as the mothership that carried all three astronauts from Earth to lunar orbit and back. It consisted of a cone-shaped Command Module, which housed the crew and flight controls, and a cylindrical Service Module that contained the main propulsion engine and supplies. Only the Command Module returned to Earth, while the Service Module was jettisoned before reentry. Thus, the designs of Eagle and Columbia were tailored to their specific missions: Eagle for lunar operations and Columbia for travel to and from lunar orbit.",
+        "id": "M03",
+        "question": "A client sends a conditional GET with If-None-Match listing an entity tag that matches the current representation. What response should the server send, and which header fields must that response include?",
+        "expected_answer": "The If-None-Match condition evaluates to false (using weak comparison), so for GET or HEAD the server responds with 304 (Not Modified). The 304 must include whichever of Content-Location, Date, ETag, Vary, Cache-Control and Expires would have been sent in a 200 response, and it has no content.",
         "question_type": "Multi-Hop",
-        "source_chunks": [
-            "./data\\03-spacecraft.md",
-            "./data\\03-spacecraft.md"
+        "source_chunks": ["RFC 9110 §13.1.2", "RFC 9110 §15.4.5"],
+        "evidence": [
+            "the 304 (Not Modified) status code if the request method is GET or HEAD",
+            "Content-Location, Date, ETag, and Vary"
         ]
     },
     {
-        "question": "What were the roles of the Apollo 11 crew members during the mission, and which spacecraft did each of them operate or remain in during the lunar landing?",
-        "expected_answer": "During the Apollo 11 mission, the crew consisted of Neil Armstrong, Buzz Aldrin, and Michael Collins. Neil Armstrong and Buzz Aldrin were the two astronauts who descended to the lunar surface in the Lunar Module, named Eagle, where Armstrong famously took the first steps on the Moon. Michael Collins remained in lunar orbit aboard the Command and Service Module, named Columbia, while Armstrong and Aldrin conducted their moonwalk and surface activities.",
+        "id": "M04",
+        "question": "Under what conditions can a response to a POST request be cached, and can a cached POST response be used for a later GET?",
+        "expected_answer": "Only when the response has explicit freshness information (such as max-age, s-maxage for shared caches, or Expires) and a Content-Location header field equal to the POST's target URI. A cached POST response can then satisfy a later GET or HEAD request.",
         "question_type": "Multi-Hop",
-        "source_chunks": [
-            "./data\\README.md",
-            "./data/03-spacecraft.md"
+        "source_chunks": ["RFC 9110 §9.3.3", "RFC 9111 §4.2.1"],
+        "evidence": [
+            "Responses to POST requests are only cacheable when they include explicit freshness information",
+            "If the cache is shared and the s-maxage response directive (Section 5.2.2.10) is present, use its value"
         ]
     },
     {
-        "question": "What were the exact coordinates of the landing site of Apollo 11 on the Moon?",
-        "expected_answer": "The exact coordinates of the landing site of Apollo 11 on the Moon are not provided in the text.",
+        "id": "M05",
+        "question": "A proxy receives an HTTP/1.1 request carrying both Transfer-Encoding and Content-Length. How is the body length determined, what must the proxy do before forwarding, and what attack is this rule meant to prevent?",
+        "expected_answer": "Transfer-Encoding overrides Content-Length, and the message ought to be handled as an error. An intermediary that forwards it MUST first remove the Content-Length field and process the Transfer-Encoding. The rule defends against request smuggling, which exploits parsing differences between recipients to hide extra requests inside an apparently harmless one.",
+        "question_type": "Multi-Hop",
+        "source_chunks": ["RFC 9112 §6.3", "RFC 9112 §11.2"],
+        "evidence": [
+            "the Transfer-Encoding overrides the Content-Length",
+            "exploits differences in protocol parsing among various recipients"
+        ]
+    },
+    {
+        "id": "M06",
+        "question": "After a DELETE request passes through a cache and succeeds, what must the cache do with its stored responses for that URI, and why does DELETE trigger this?",
+        "expected_answer": "The cache MUST invalidate the target URI, because it received a non-error response to an unsafe method. DELETE is unsafe: only GET, HEAD, OPTIONS and TRACE are defined as safe. DELETE is idempotent, but that does not make it safe.",
+        "question_type": "Multi-Hop",
+        "source_chunks": ["RFC 9111 §4.4", "RFC 9110 §9.2.1"],
+        "evidence": [
+            "A cache MUST invalidate the target URI",
+            "the GET, HEAD, OPTIONS, and TRACE methods are defined to be safe"
+        ]
+    },
+    {
+        "id": "M07",
+        "question": "A client wants to resume an interrupted download, but only if the file has not changed in the meantime. Which header fields does it send, and what does the server return if the file has changed?",
+        "expected_answer": "It sends Range together with If-Range, carrying the stored ETag or Last-Modified date. If the If-Range condition is false (the file changed), the server MUST ignore Range and send the full representation, typically 200 (OK). If the condition is true, it sends 206 (Partial Content) with the requested part.",
+        "question_type": "Multi-Hop",
+        "source_chunks": ["RFC 9110 §13.1.5", "RFC 9110 §15.3.7"],
+        "evidence": [
+            "MUST ignore the Range header field if the If-Range condition evaluates to false",
+            "The 206 (Partial Content) status code indicates that the server is successfully fulfilling a range request"
+        ]
+    },
+    {
+        "id": "M08",
+        "question": "A cache holds a stored response with \"Vary: *\". Can it use that response to answer a new request without contacting the origin server?",
+        "expected_answer": "No. A stored response whose Vary value contains \"*\" always fails to match, so the cache must forward the request. \"*\" means aspects of the request beyond its header fields, possibly outside the message altogether (such as the client's network address), influenced the choice of representation.",
+        "question_type": "Multi-Hop",
+        "source_chunks": ["RFC 9111 §4.1", "RFC 9110 §12.5.5"],
+        "evidence": [
+            "always fails to match",
+            "signals that other aspects of the request might have played a role in selecting the response representation"
+        ]
+    },
+    {
+        "id": "M09",
+        "question": "How does an HTTP/1.1 client signal that a request is the last one it will send on a connection, and what is the Connection header field in general?",
+        "expected_answer": "It sends \"Connection: close\". It then MUST NOT send further requests on that connection and MUST close the connection after reading the final response. In general, Connection lets the sender list control options for the current connection only (hop-by-hop), and intermediaries must remove or replace those options before forwarding.",
+        "question_type": "Multi-Hop",
+        "source_chunks": ["RFC 9112 §9.6", "RFC 9110 §7.6.1"],
+        "evidence": [
+            "connection option is defined as a signal that the sender will close this connection",
+            "allows the sender to list desired control options for the current connection"
+        ]
+    },
+    {
+        "id": "U01",
+        "question": "What is the initial value of SETTINGS_MAX_CONCURRENT_STREAMS in HTTP/2?",
+        "expected_answer": "Not covered. RFC 9110, 9111 and 9112 do not define HTTP/2 SETTINGS parameters (they are in RFC 9113), so the system should say it cannot answer from these documents.",
         "question_type": "Unanswerable",
-        "source_chunks": [
-            "./data/04-timeline.md"
-        ]
+        "source_chunks": [],
+        "evidence": []
     },
     {
-        "question": "What was the total weight of the Eagle lunar module at launch?",
-        "expected_answer": "The text does not provide information about the total weight of the Eagle lunar module at launch.",
+        "id": "U02",
+        "question": "How does a server compute the Sec-WebSocket-Accept value during the WebSocket opening handshake?",
+        "expected_answer": "Not covered. The WebSocket handshake is defined in RFC 6455, not in these documents. They cover the generic Upgrade mechanism and 101 (Switching Protocols) but say nothing about Sec-WebSocket-* fields.",
         "question_type": "Unanswerable",
-        "source_chunks": [
-            "./data/03-spacecraft.md"
-        ]
+        "source_chunks": [],
+        "evidence": []
     },
     {
-        "question": "What were the main components involved in the mission described?",
-        "expected_answer": "The question cannot be answered as asked because it is too vague and does not specify which mission is being referred to. Clarification is needed regarding the specific mission or context to provide an accurate answer about the components involved.",
-        "question_type": "Ambiguous",
-        "source_chunks": [
-            "./data\\03-spacecraft.md"
-        ]
+        "id": "U03",
+        "question": "When should a server respond with 429 Too Many Requests, and what should accompany it?",
+        "expected_answer": "Not covered. 429 is defined in RFC 6585, not in RFC 9110, 9111 or 9112, so the system should not answer from these documents.",
+        "question_type": "Unanswerable",
+        "source_chunks": [],
+        "evidence": []
     },
     {
-        "question": "What significant event occurred during a notable mission involving a spacecraft and a crew?",
-        "expected_answer": "The question cannot be answered as asked because it lacks specific details about which mission, spacecraft, or crew is being referred to. Clarification is needed regarding the specific mission or context to provide an accurate answer.",
+        "id": "U04",
+        "question": "What does the max-age directive of the Strict-Transport-Security header control?",
+        "expected_answer": "Not covered. HSTS is defined in RFC 6797. These documents define a Cache-Control max-age directive, which is unrelated, so answering from it would be wrong.",
+        "question_type": "Unanswerable",
+        "source_chunks": [],
+        "evidence": []
+    },
+    {
+        "id": "U05",
+        "question": "How does QPACK compress header fields in HTTP/3?",
+        "expected_answer": "Not covered. QPACK is defined in RFC 9204. These documents do not describe HTTP/3 field compression.",
+        "question_type": "Unanswerable",
+        "source_chunks": [],
+        "evidence": []
+    },
+    {
+        "id": "A01",
+        "question": "How long can it be cached?",
+        "expected_answer": "Ambiguous: it doesn't say which response, status code, or cache-control directives are involved. The answer depends on explicit freshness (s-maxage, max-age, Expires) or, failing that, on heuristic freshness for heuristically cacheable status codes. The user needs to specify the response.",
         "question_type": "Ambiguous",
-        "source_chunks": [
-            "./data/README.md"
-        ]
+        "source_chunks": [],
+        "evidence": []
+    },
+    {
+        "id": "A02",
+        "question": "What status code should I return in this case?",
+        "expected_answer": "Ambiguous: no situation is described. The right status code depends entirely on the error or success condition, so the user needs to explain it.",
+        "question_type": "Ambiguous",
+        "source_chunks": [],
+        "evidence": []
+    },
+    {
+        "id": "A03",
+        "question": "Is it safe to retry that request automatically?",
+        "expected_answer": "Ambiguous: the request and method aren't specified. Automatic retry is appropriate for idempotent methods (PUT, DELETE, and the safe methods) but not in general for non-idempotent ones such as POST. The user needs to say which method or request they mean.",
+        "question_type": "Ambiguous",
+        "source_chunks": [],
+        "evidence": []
+    },
+    {
+        "id": "A04",
+        "question": "What is the maximum length allowed?",
+        "expected_answer": "Ambiguous: it doesn't say what length. HTTP sets no fixed maximum for URIs, fields or content, and RFC 9112 only recommends supporting request-lines of at least 8000 octets. The user needs to say whether they mean the URI, the request-line, a header field, or the message content.",
+        "question_type": "Ambiguous",
+        "source_chunks": [],
+        "evidence": []
     }
 ]

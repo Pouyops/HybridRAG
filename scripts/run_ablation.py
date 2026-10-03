@@ -58,7 +58,7 @@ from src.evaluator import RAGEvaluator  # noqa: E402
 from src.generator import AdvancedRAGSystem  # noqa: E402
 from src.indexer import indexer  # noqa: E402
 from src.loader import multiloader  # noqa: E402
-from src.retriever import HybridRetriever  # noqa: E402
+from src.retriever import HybridRetriever, _RERANKER_MODEL, _load_cross_encoder  # noqa: E402
 
 RESULTS_DIR = os.path.join(REPO_ROOT, "results")
 RESULTS_CSV = os.path.join(RESULTS_DIR, "ablation_results.csv")
@@ -245,7 +245,7 @@ def build_shared_index(data_dir: str, openai_api_key: str):
     loader = multiloader(data_dir)
     documents = loader._document_loader()[:50]
     if not documents:
-        raise SystemExit(f"No documents loaded from {data_dir!r}.")
+        raise SystemExit(f"No documents loaded from {data_dir!r}. Run `python scripts/fetch_corpus.py` to download the default corpus.")
 
     chunker = Chunker(embedding_fn=embeddings)
     chunks = []
@@ -281,6 +281,17 @@ def append_result(results_csv, row: dict):
     df_row.to_csv(results_csv, mode="a", header=not file_exists, index=False)
 
 
+_cross_encoder = None
+
+
+def _shared_cross_encoder():
+    """Load the reranker model once for the whole ablation, not once per cell."""
+    global _cross_encoder
+    if _cross_encoder is None:
+        _cross_encoder = _load_cross_encoder(_RERANKER_MODEL)
+    return _cross_encoder
+
+
 def run_one_cell(config, run_idx, vectorstore, bm25, generator_llm, judge_llm, dataset_path):
     retriever = HybridRetriever(
         vectorstore=vectorstore,
@@ -288,6 +299,7 @@ def run_one_cell(config, run_idx, vectorstore, bm25, generator_llm, judge_llm, d
         dense_weight=config["dense_weight"],
         sparse_weight=config["sparse_weight"],
         use_reranker=config["use_reranker"],
+        reranker=_shared_cross_encoder() if config["use_reranker"] else None,
     )
     rag_pipeline = AdvancedRAGSystem(llm=generator_llm, retriever=retriever)
     evaluator = RAGEvaluator(rag_pipeline=rag_pipeline, judge_llm=judge_llm)

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Pouyops/HybridRAG/actions/workflows/ci.yml/badge.svg)](https://github.com/Pouyops/HybridRAG/actions/workflows/ci.yml)
 
-A retrieval-augmented generation pipeline that combines dense and BM25 retrieval, reranks with a cross-encoder, and checks its own citations before it answers. If it cannot back an answer with the retrieved text, it says so instead of guessing.
+A retrieval-augmented generation pipeline that combines dense and BM25 retrieval, scores its context with a cross-encoder, and checks its own citations before it answers. If it cannot back an answer with the retrieved text, it says so instead of guessing.
 
 The default corpus is the IETF HTTP standards: RFC 9110 (Semantics), RFC 9111 (Caching) and RFC 9112 (HTTP/1.1), about 92,000 words in total. That makes the system an HTTP standards assistant for backend and API developers. It answers questions like "When may a cache reuse a stored response?" or "Why must a proxy strip Content-Length when Transfer-Encoding is present?" with citations to the relevant passages, and declines questions the standards don't cover.
 
@@ -17,12 +17,12 @@ It runs as a CLI, a FastAPI service, or a Streamlit app, and includes an evaluat
 | Stage | Module | What happens |
 |---|---|---|
 | Load | `src/loader.py` | Reads `.pdf`, `.html`/`.htm`, `.md` and `.txt` files from a directory (in sorted order) and normalizes whitespace while keeping line breaks. |
-| Chunk | `src/chunker.py` | Splits each document with one of three strategies: `TokenRecursive` (512 tokens, 50 overlap; the default), `Markdown` (by `#`/`##`/`###` headers) or `Semantic` (embedding-distance breakpoints). |
+| Chunk | `src/chunker.py` | Splits each document with one of three strategies. `Markdown` (the default) splits by `#`/`##`/`###` headers, then splits any section over 800 tokens and prefixes each continuation piece with its heading path. `TokenRecursive` uses 512 tokens with 50 overlap. `Semantic` splits at embedding-distance breakpoints. |
 | Index | `src/indexer.py` | Embeds chunks into a persisted Chroma collection (`text-embedding-3-small`) and builds a BM25 index over the same chunks. Rebuilding into an existing directory replaces the collection, so the index never accumulates duplicates. |
-| Retrieve | `src/retriever.py` | Takes the top 60 hits from each index, fuses them with weighted Reciprocal Rank Fusion, `score = Σ wᵢ / (k + rankᵢ)` (dense 0.7, sparse 0.3, k = 60), keeps the top 20, and reranks those with `cross-encoder/ms-marco-MiniLM-L-6-v2` down to 5. |
+| Retrieve | `src/retriever.py` | Takes the top 60 hits from each index, fuses them with weighted Reciprocal Rank Fusion, `score = Σ wᵢ / (k + rankᵢ)` (dense 0.7, sparse 0.3, k = 60), and keeps the top 5. Two options are off by default because measurement showed they hurt: cross-encoder reranking (`use_reranker`) and LLM query decomposition (`decompose_queries`). |
 | Generate | `src/generator.py` | Asks the LLM (`gpt-4o-mini`) to answer only from the numbered context blocks and to cite them as `[1]`, `[1][2]` or `[1, 2]`. |
-| Verify | `src/generator.py` | Splits the answer into cited claims and has a judge LLM check each claim against the text of the chunks it cites. |
-| Gate | `src/generator.py` | Computes `0.3 × retrieval + 0.4 × citation coverage + 0.3 × completeness`. Retrieval is the mean sigmoid of the top-3 cross-encoder scores; completeness is LLM-rated and clamped to 0–1. If the result is below 0.75, the pipeline returns an "Insufficient Information" response that lists the most relevant source files instead of an answer. |
+| Verify | `src/generator.py` | Splits the answer into cited claims, and a judge LLM checks each one against the chunks it cites. A claim counts only if *every* part of it is in the text. A claim that cites the wrong block but is supported by another retrieved block is accepted with its citation corrected. |
+| Gate | `src/generator.py` | Computes `0.3 × retrieval + 0.4 × citation coverage + 0.3 × completeness`. Retrieval is the mean sigmoid of the top-3 chunks' cross-encoder scores (`cross-encoder/ms-marco-MiniLM-L-6-v2` scores the chosen chunks without reordering them); completeness is LLM-rated and clamped to 0–1. If the result is below 0.75, the pipeline returns an "Insufficient Information" response that lists the most relevant source files instead of an answer. |
 
 `src/pipeline.py` wires these stages together. `app.py`, `streamlit_app.py` and `scripts/validate_judge.py` all use it.
 
@@ -111,9 +111,9 @@ DENSE_WEIGHT=0.5 SPARSE_WEIGHT=0.5 FINAL_K=8 uvicorn app:app
 
 | Group | Settings (defaults) |
 |---|---|
-| Retrieval | `dense_weight` 0.7, `sparse_weight` 0.3, `retrieval_depth` 60, `rrf_k` 60, `top_n` 20, `final_k` 5 |
+| Retrieval | `dense_weight` 0.7, `sparse_weight` 0.3, `retrieval_depth` 60, `rrf_k` 60, `top_n` 20, `final_k` 5, `use_reranker` false, `cross_encoder_confidence` true, `decompose_queries` false |
 | Gate | `confidence_threshold` 0.75 |
-| Chunking | `chunk_size` 512, `chunk_overlap` 50 |
+| Chunking | `chunking_strategy` Markdown, `markdown_max_tokens` 800, `chunk_size` 512, `chunk_overlap` 50 |
 | Models | `generator_model` / `judge_model` `gpt-4o-mini`, `embedding_model` `text-embedding-3-small` |
 | Temperatures | `generator_temperature` 0, `judge_temperature` 0, `synthetic_temperature` 0.7 |
 
@@ -147,15 +147,17 @@ Every answerable question cites its RFC sections and includes verbatim **evidenc
 | `scripts/run_ablation.py` | Dense vs sparse vs hybrid, reranker on/off and RRF weights, end to end. Resumable | Generator + judge LLM |
 | `scripts/validate_judge.py` | How closely the judge's scores agree with human labels | Generator + judge LLM |
 
-**Results** (full analysis, ablation charts and caveats in [`RESULTS.md`](RESULTS.md)):
+**Results.** The first full evaluation produced four recommendations. Each was implemented and measured, then kept or switched off based on the numbers. Default configuration, before → after:
 
-| Finding | Evidence |
-|---|---|
-| The cross-encoder reranker *hurts* on these documents | Lowers hit@5 in all 9 chunking × retrieval-mode combinations. 32–50% of chunks exceed its 512-token window, and it was trained on short web passages |
-| Multi-hop retrieval is unsolved | At most 4 of 9 multi-hop questions get all their evidence into the top 5. TokenRecursive gets 1 of 9 in every configuration |
-| Best retrieval: Semantic chunks, hybrid, no reranker | hit@1 0.826, hit@5 1.000, MRR 0.913, at ~5,000 words of context per query |
-| Best answers: Markdown chunking | Correctness 0.937 vs 0.902 for TokenRecursive (the default); citation accuracy 1.000 |
-| The gate's real failure is letting a hallucination through, not refusing too often | Under the default setup, 0 of 23 answerable questions were refused, but one out-of-corpus question (HSTS) was answered confidently from model knowledge |
+| Metric | Before | After |
+|---|---|---|
+| Retrieval hit@5 / MRR (exact) | 0.826 / 0.649 | **0.913 / 0.761** |
+| Correctness (LLM judge) | 0.902 | **0.971** |
+| Citation accuracy | 0.975 | **1.000** |
+| Unanswerable/ambiguous questions answered | 4 of 9, incl. a hallucination | **1 of 9** |
+| Answerable questions refused | 0 of 23 | 1 of 23 |
+
+What changed: the cross-encoder reranker is off (it lowered hit@5 in every configuration), the citation verifier is strict, and Markdown chunks are capped at 800 tokens and are now the default. Query decomposition was implemented and measured, but it didn't help multi-hop retrieval, so it is off. [`RESULTS.md`](RESULTS.md) has the tables, the ablation and the caveats; earlier rounds are in [`results/rfc_baseline/`](results/rfc_baseline/RESULTS.md) and [`results/apollo11/`](results/apollo11/RESULTS.md).
 
 ## Project layout
 
@@ -197,8 +199,9 @@ The tests cover RRF fusion, reranking, BM25 tokenization, citation parsing and v
 
 ## Known limitations
 
-- **Without the reranker, the retrieval-confidence term is not meaningful.** When `use_reranker=False`, raw RRF scores (about 0.01) go into a sigmoid that expects cross-encoder logits, so that term sits near 0.5 for every query. This affects the reranker-off arm of the ablation.
+- **Multi-hop retrieval is unsolved.** The best configuration gets all the evidence for only 4 of 9 two-passage questions into the top 5, and query decomposition didn't change that.
+- **The retrieval-confidence term needs the cross-encoder.** With both `use_reranker` and `cross_encoder_confidence` off, raw RRF scores (about 0.01) go into a sigmoid that expects logits, so that term sits near 0.5 for every query.
 - **An answer with no citations gets full citation coverage.** Uncited text is not counted against coverage, so only the retrieval and completeness terms can gate an uncited answer.
 - **Cost estimates are approximate.** `/metrics` counts tokens for one generation call with illustrative `gpt-4o-mini` prices. It does not include the verification and completeness calls each query also makes.
-- **Markdown-header chunks are uneven on real documents.** Some RFC sections are about 4,000 words long ("9.3. Method Definitions"). Splitting only on `#`/`##`/`###` makes those single chunks, which inflates retrieval hit rates and the size of the generator's prompt.
+- **Defaults were tuned on the evaluation set.** There is no held-out question set, so the chosen defaults may fit these 32 questions better than new ones.
 - **The evaluation set is small.** With 23 answerable questions, one question is worth about 4 points of hit@k, so treat small differences as noise.

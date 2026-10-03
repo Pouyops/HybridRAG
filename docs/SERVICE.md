@@ -137,7 +137,7 @@ DENSE_WEIGHT=0.6 SPARSE_WEIGHT=0.4 uvicorn app:app --reload
 
 On every push and pull request to `main`: checks out the repo, sets up Python
 3.11, installs `requirements.txt` + `requirements-dev.txt`, and runs
-`pytest -q`. The 22-test suite is fully mocked (no network calls, no real
-CrossEncoder download, no `OPENAI_API_KEY` required) — verified locally by
-running `pytest -q` with `OPENAI_API_KEY`/`OPENROUTER_API_KEY` unset, which
-still passes all 22 tests.
+`pytest -q`. The test suite is fully mocked (no OpenAI calls, no real
+CrossEncoder download, no `OPENAI_API_KEY` required) and passes with
+`OPENAI_API_KEY` unset. The one index test uses a local Chroma store with
+fake embeddings.

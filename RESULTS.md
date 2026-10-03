@@ -5,8 +5,35 @@ pipeline's evaluation harness, not aspirational numbers. Where a run failed,
 was cut short by a rate limit, or produced a surprising result, that is
 called out explicitly rather than smoothed over.
 
-**Corpus:** a 7-file, ~2,885-word original Apollo 11 markdown corpus
-(`./data/`), indexed as 12 chunks under the default `TokenRecursive`
+> **Corrections after a later bug-fix pass (read first).**
+>
+> 1. **Fallback rates in Section 1 were inflated and have been recomputed.**
+>    `main.py` divided the number of fallbacks by the number of *answered*
+>    questions instead of by all 14 questions asked, so 4 fallbacks were
+>    reported as 4/10 = 0.400 rather than 4/14 = 0.286. Because every raw
+>    value was `failures / (14 - failures)`, the true rate can be recovered
+>    exactly, so `results/strategy_comparison_results.csv` and the tables
+>    below now show the corrected numbers. (`scripts/run_ablation.py`
+>    always used the right denominator, so Section 2 is unaffected.) This is
+>    also why Section 1's TokenRecursive row (0.400) used to disagree with
+>    Section 2's identically configured `hybrid_default` row (0.286). They
+>    now agree.
+> 2. **The "Markdown" chunking row did not measure Markdown-header
+>    chunking.** The loader collapsed all whitespace, newlines included, so
+>    `MarkdownHeaderTextSplitter` saw each file as a single header line and
+>    produced one chunk per file. The loader now keeps line breaks, and the
+>    same corpus splits into 30 section-level chunks instead of one per file. The
+>    Markdown numbers below are from the old behavior and need a re-run.
+> 3. **`data/README.md` (the corpus description) was indexed as corpus
+>    content.** It is the "7th file" below, and several frozen questions were
+>    generated from it. It now lives at `docs/CORPUS.md`, so `data/` has six
+>    files.
+>
+> Re-running `python main.py --runs 3` and `python scripts/run_ablation.py
+> --runs 3` against the fixed code will refresh every number here.
+
+**Corpus (at the time of these runs):** a 7-file, ~2,885-word original Apollo 11 markdown corpus
+(`./data/`, including the corpus `README.md`; see correction 3 above), indexed as 12 chunks under the default `TokenRecursive`
 chunking strategy.
 
 **Frozen evaluation set:** `evaluation_dataset.json`, generated once via
@@ -17,8 +44,8 @@ run below (`main.py`'s default behavior no longer regenerates it; pass
 contains **14** questions, not 15 -- `build_dataset` computes each question
 type's count as `int(total_questions * fraction)` (6 Lookup + 4 Multi-Hop +
 2 Unanswerable + 2 Ambiguous = 14), which silently truncates rather than
-rounds. This is pre-existing `SyntheticEvaluator` behavior this phase did
-not change; flagging it here for accuracy. Seeding pins *which chunks* get
+rounds. (Since fixed: `build_dataset` now uses largest-remainder rounding,
+so `total_questions=15` yields 15. The committed frozen set is unchanged.) Seeding pins *which chunks* get
 sampled for question generation, not the LLM's exact phrasing of the
 question/answer text -- that remains subject to OpenAI API non-determinism
 even at temperature 0.
@@ -33,21 +60,20 @@ even at temperature 0.
    (TokenRecursive and Markdown: 0.997 +/- 0.005; Semantic: 1.000 +/- 0.000),
    and Retrieval Relevance sits in a tight 0.979-0.983 band. On this small,
    clean 7-file corpus, chunking strategy is not the bottleneck.
-2. **The real bottleneck is the confidence gate, not retrieval or
-   generation quality.** All three strategies fail (fall back to
-   "Insufficient Information") on **40-45% of the 14 frozen questions** --
-   TokenRecursive and Markdown both at 0.400 +/- 0.000, Semantic worse and
-   noisier at 0.452 +/- 0.073. Given the frozen set is deliberately 2/14
-   Unanswerable + 2/14 Ambiguous (which are *supposed* to trigger the
-   fallback -- see Section 3), a chunk of that 40%+ is expected/correct
-   behavior, not a defect; what this number can't distinguish, without the
-   per-question breakdown, is how much of the rest is the confidence
-   threshold (0.75) being conservative on genuinely answerable questions.
+2. **The confidence gate falls back on almost exactly the questions it
+   should.** With the corrected denominator (see the corrections box above),
+   TokenRecursive and Markdown fall back on 4 of 14 questions in every run
+   (0.286 +/- 0.000), and Semantic on 4-5 (0.310 +/- 0.034). The frozen set
+   holds exactly 4 questions designed to trigger the fallback (2
+   Unanswerable + 2 Ambiguous), and Section 3 confirms that for the default
+   configuration those 4 are the ones that fall back. The gate is *not*
+   rejecting answerable questions under the default configuration. The
+   originally reported 40-45% figure came from the denominator bug.
 3. **TokenRecursive wins on retrieval relevance, Markdown wins on citation
    accuracy, and Semantic is the least stable strategy on every metric.**
    Semantic has the largest std of all three strategies on retrieval
    relevance (+/-0.008), citation accuracy (+/-0.030, and the lowest mean
-   there too at 0.964 vs 0.975-0.978), and fallback rate (+/-0.073) --
+   there too at 0.964 vs 0.975-0.978), and fallback rate (+/-0.034) --
    consistent with `SemanticChunker`'s embedding-distance-based split points
    being more sensitive to run-to-run variance than the deterministic
    token/markdown splitters.
@@ -72,9 +98,13 @@ Command: `python main.py --runs 3`
 
 | Chunking Strategy | Correctness (mean+/-std) | Faithfulness (mean+/-std) | Retrieval Relevance (mean+/-std) | Citation Accuracy (mean+/-std) | Fallback Rate (mean+/-std) |
 |---|---|---|---|---|---|
-| TokenRecursive | 0.997 +/- 0.005 | 1.000 +/- 0.000 | 0.983 +/- 0.005 | 0.975 +/- 0.000 | 0.400 +/- 0.000 |
-| Markdown | 0.997 +/- 0.005 | 1.000 +/- 0.000 | 0.980 +/- 0.000 | 0.978 +/- 0.002 | 0.400 +/- 0.000 |
-| Semantic | 1.000 +/- 0.000 | 1.000 +/- 0.000 | 0.979 +/- 0.008 | 0.964 +/- 0.030 | 0.452 +/- 0.073 |
+| TokenRecursive | 0.997 +/- 0.005 | 1.000 +/- 0.000 | 0.983 +/- 0.005 | 0.975 +/- 0.000 | 0.286 +/- 0.000 |
+| Markdown* | 0.997 +/- 0.005 | 1.000 +/- 0.000 | 0.980 +/- 0.000 | 0.978 +/- 0.002 | 0.286 +/- 0.000 |
+| Semantic | 1.000 +/- 0.000 | 1.000 +/- 0.000 | 0.979 +/- 0.008 | 0.964 +/- 0.030 | 0.310 +/- 0.034 |
+
+\* Measured while the loader flattened newlines, so this row is effectively
+"one chunk per file", not Markdown-header chunking (see the corrections box).
+Fallback Rate column recomputed with the correct denominator.
 
 Winner (Retrieval Relevance, mean): **TokenRecursive** -- also the project
 default. Winner (Citation Accuracy, mean): **Markdown** (0.978), ahead of

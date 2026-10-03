@@ -147,14 +147,15 @@ Every answerable question cites its RFC sections and includes verbatim **evidenc
 | `scripts/run_ablation.py` | Dense vs sparse vs hybrid, reranker on/off and RRF weights, end to end. Resumable | Generator + judge LLM |
 | `scripts/validate_judge.py` | How closely the judge's scores agree with human labels | Generator + judge LLM |
 
-**Measured so far** (BM25 only, 23 answerable questions, top 5 chunks):
+**Results** (full analysis, ablation charts and caveats in [`RESULTS.md`](RESULTS.md)):
 
-| Chunking | hit@1 | hit@5 | full@5 | full@5, multi-hop only | MRR | Words sent to LLM |
-|---|---|---|---|---|---|---|
-| TokenRecursive | 0.652 | 0.957 | 0.652 | 0.111 | 0.790 | 1,672 |
-| Markdown | 0.739 | 1.000 | 0.783 | 0.444 | 0.851 | 6,020 |
-
-Single-section lookups mostly succeed. Multi-hop questions mostly don't get every passage they need. That is the gap dense retrieval and the reranker should close. The dense, hybrid, reranker and LLM-judged runs need OpenAI and Hugging Face access and are still to be run. [`RESULTS.md`](RESULTS.md) has the full analysis, a BM25 tokenizer fix it motivated, caveats, and the commands for the remaining runs.
+| Finding | Evidence |
+|---|---|
+| The cross-encoder reranker *hurts* on these documents | Lowers hit@5 in all 9 chunking × retrieval-mode combinations. 32–50% of chunks exceed its 512-token window, and it was trained on short web passages |
+| Multi-hop retrieval is unsolved | At most 4 of 9 multi-hop questions get all their evidence into the top 5. TokenRecursive gets 1 of 9 in every configuration |
+| Best retrieval: Semantic chunks, hybrid, no reranker | hit@1 0.826, hit@5 1.000, MRR 0.913, at ~5,000 words of context per query |
+| Best answers: Markdown chunking | Correctness 0.937 vs 0.902 for TokenRecursive (the default); citation accuracy 1.000 |
+| The gate's real failure is letting a hallucination through, not refusing too often | Under the default setup, 0 of 23 answerable questions were refused, but one out-of-corpus question (HSTS) was answered confidently from model knowledge |
 
 ## Project layout
 

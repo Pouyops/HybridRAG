@@ -74,6 +74,13 @@ def test_verify_citations_computes_coverage_from_judge_results():
                 is_supported=False,
                 reasoning="not supported",
             ),
+            # Fallback re-check of claim two against all retrieved blocks.
+            CitationVerification(
+                claim="claim two",
+                cited_chunk_ids=[],
+                is_supported=False,
+                reasoning="not supported by any block",
+            ),
         ]
     )
 
@@ -87,6 +94,7 @@ def test_verify_citations_computes_coverage_from_judge_results():
 
     assert verification.coverage_percentage == 0.5
     assert len(verification.verifications) == 2
+    assert verification.corrected_citations == []
 
 
 def test_verify_citations_combines_content_from_multiple_cited_chunks():
@@ -284,3 +292,62 @@ def test_unknown_response_lists_suggested_documents_in_rank_order():
     response = system._format_unknown_response("q", "reason", chunks)
 
     assert response["suggested_documents"] == ["b.md", "a.md"]
+
+
+def test_verify_citations_repairs_a_miscited_but_grounded_claim():
+    """Regression test: on the RFC corpus the generator often cites the wrong
+    block for text it did take from the context. That claim is grounded, so it
+    must count toward coverage, with the correction reported rather than the
+    whole answer being refused."""
+    system = _make_system()
+    chunks = [
+        Document(page_content="caching validation text", metadata={}),
+        Document(page_content="a 304 must include Date and ETag", metadata={}),
+    ]
+    claims = [{"claim": "A 304 must include Date and ETag", "chunk_ids": [1]}]
+    prompts = []
+
+    class FakeJudgeLLM:
+        def invoke(self, prompt):
+            prompts.append(prompt)
+            if len(prompts) == 1:  # judged against the cited block [1] only
+                return CitationVerification(
+                    claim="c", cited_chunk_ids=[1], is_supported=False, reasoning="no"
+                )
+            return CitationVerification(
+                claim="c", cited_chunk_ids=[2], is_supported=True, reasoning="block 2"
+            )
+
+    system.judge_llm = FakeJudgeLLM()
+
+    verification = system.verify_citations(claims, chunks)
+
+    assert verification.coverage_percentage == 1.0
+    assert verification.corrected_citations == [
+        {
+            "claim": "A 304 must include Date and ETag",
+            "cited_chunk_ids": [1],
+            "supporting_chunk_ids": [2],
+        }
+    ]
+    assert "a 304 must include Date and ETag" not in prompts[0]
+    assert "Block [2]:\na 304 must include Date and ETag" in prompts[1]
+
+
+def test_verify_citations_skips_fallback_when_cited_block_supports_claim():
+    system = _make_system()
+    chunks = [Document(page_content="context A", metadata={})]
+    calls = []
+
+    class FakeJudgeLLM:
+        def invoke(self, prompt):
+            calls.append(prompt)
+            return CitationVerification(
+                claim="c", cited_chunk_ids=[1], is_supported=True, reasoning="ok"
+            )
+
+    system.judge_llm = FakeJudgeLLM()
+
+    system.verify_citations([{"claim": "c", "chunk_ids": [1]}], chunks)
+
+    assert len(calls) == 1

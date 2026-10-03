@@ -28,6 +28,9 @@ class CitationVerification(BaseModel):
 class VerificationResult(BaseModel):
     verifications: List[CitationVerification]
     coverage_percentage: float
+    # Claims whose cited blocks did not support them but another retrieved
+    # block did: {"claim", "cited_chunk_ids", "supporting_chunk_ids"}.
+    corrected_citations: List[Dict[str, Any]] = []
 
 
 class ConfidenceScore(BaseModel):
@@ -75,7 +78,17 @@ class AdvancedRAGSystem:
     def verify_citations(
         self, claims: List[Dict[str, Any]], retrieved_chunks: List[Any]
     ) -> VerificationResult:
+        """Judge each claim against the blocks it cites. If those blocks don't
+        support it, re-judge it against all retrieved blocks: on long,
+        densely cross-referenced documents the generator often cites the
+        wrong block for text it really did take from the context (e.g. a
+        chunk that spans the end of one section and the start of the next).
+        Such a claim is grounded, so it counts toward coverage, but the
+        correction is reported in `corrected_citations` rather than hidden.
+        The evaluator's citation-accuracy metric stays strict and only looks
+        at the blocks actually cited."""
         verifications = []
+        corrected = []
         supported_count = 0
 
         for claim_data in claims:
@@ -98,6 +111,17 @@ class AdvancedRAGSystem:
             """
 
             result = self.judge_llm.invoke(prompt)
+            if not result.is_supported and retrieved_chunks:
+                fallback = self._verify_against_all_blocks(claim_text, retrieved_chunks)
+                if fallback.is_supported:
+                    corrected.append(
+                        {
+                            "claim": claim_text,
+                            "cited_chunk_ids": chunk_ids,
+                            "supporting_chunk_ids": fallback.cited_chunk_ids,
+                        }
+                    )
+                    result = fallback
             verifications.append(result)
 
             if result.is_supported:
@@ -106,8 +130,27 @@ class AdvancedRAGSystem:
         coverage = (supported_count / len(claims)) if claims else 1.0
 
         return VerificationResult(
-            verifications=verifications, coverage_percentage=coverage
+            verifications=verifications,
+            coverage_percentage=coverage,
+            corrected_citations=corrected,
         )
+
+    def _verify_against_all_blocks(
+        self, claim_text: str, retrieved_chunks: List[Any]
+    ) -> CitationVerification:
+        blocks = "\n\n".join(
+            f"Block [{i + 1}]:\n{chunk.page_content}"
+            for i, chunk in enumerate(retrieved_chunks)
+        )
+        prompt = f"""
+            Evaluate if the following claim is fully supported by the numbered source
+            blocks below (it may need more than one block). If it is, set
+            cited_chunk_ids to the numbers of the blocks that support it.
+            Claim: {claim_text}
+            Source Blocks:
+            {blocks}
+            """
+        return self.judge_llm.invoke(prompt)
 
     def score_confidence(
         self,
@@ -173,7 +216,10 @@ class AdvancedRAGSystem:
 
         qa_prompt = f"""
         You are a precise assistant. Answer the query using ONLY the provided context blocks.
-        Cite specific chunks using bracketed references (e.g., [1]).
+        After each claim, cite the context block(s) that contain the supporting text, by block
+        number in square brackets, e.g. [1] or [2][3]. Valid block numbers are 1 to {len(chunks)}.
+        The context may itself contain bracketed references such as [HTTP] or section numbers
+        such as 15.4.5; never use those as citations.
         Context:
         {context}
         Query: {query}
@@ -202,6 +248,7 @@ class AdvancedRAGSystem:
             "flagged_citations": [
                 v.model_dump() for v in verification.verifications if not v.is_supported
             ],
+            "corrected_citations": verification.corrected_citations,
         }
 
     def _format_unknown_response(

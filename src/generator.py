@@ -52,18 +52,20 @@ class AdvancedRAGSystem:
         any subsequent) citation being silently dropped because there's no
         text between the brackets to anchor a new claim to."""
         claims = []
-        parts = re.split(r"(\[\d+\])", answer)
+        # Matches "[1]" as well as the comma-separated form "[1, 2]".
+        citation = r"\[\d+(?:\s*,\s*\d+)*\]"
+        parts = re.split(f"({citation})", answer)
         current_claim = ""
 
         for part in parts:
-            if re.match(r"\[\d+\]", part):
-                chunk_id = int(part.strip("[]"))
+            if re.fullmatch(citation, part):
+                chunk_ids = [int(n) for n in re.findall(r"\d+", part)]
                 if current_claim.strip():
                     claims.append(
-                        {"claim": current_claim.strip(), "chunk_ids": [chunk_id]}
+                        {"claim": current_claim.strip(), "chunk_ids": chunk_ids}
                     )
                 elif claims:
-                    claims[-1]["chunk_ids"].append(chunk_id)
+                    claims[-1]["chunk_ids"].extend(chunk_ids)
                 current_claim = ""
             else:
                 current_claim += part
@@ -134,6 +136,12 @@ class AdvancedRAGSystem:
             )
         except ValueError:
             completeness_result = 0.5
+        if not math.isfinite(completeness_result):
+            completeness_result = 0.5
+        # The LLM is asked for 0.0-1.0 but nothing enforces it; an
+        # out-of-range reply (e.g. "8" on a 0-10 scale) must not be able to
+        # push the composite past the threshold on its own.
+        completeness_result = min(max(completeness_result, 0.0), 1.0)
 
         composite = (
             (retrieval_score * 0.3) + (coverage * 0.4) + (completeness_result * 0.3)
@@ -213,8 +221,12 @@ class AdvancedRAGSystem:
         }
 
         if chunks:
+            # dict.fromkeys de-duplicates while keeping rank order (a set
+            # would shuffle the most relevant source out of first place).
             response["suggested_documents"] = list(
-                set([c.metadata.get("filepath", "Unknown source") for c in chunks[:3]])
+                dict.fromkeys(
+                    c.metadata.get("filepath", "Unknown source") for c in chunks[:3]
+                )
             )
 
         return response

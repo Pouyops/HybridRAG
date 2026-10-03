@@ -39,11 +39,18 @@ class indexer:
     def create_indexes(self, chunks, persist_directory="./chroma_db"):
         processed_chunks = self._prepare_metadata(chunks)
 
-        vectorstore = Chroma.from_documents(
-            documents=processed_chunks,
-            embedding=self.embeddings,
+        # Chroma.from_documents() appends to whatever collection already lives
+        # in persist_directory, so rebuilding into the same directory (every
+        # app/Streamlit/main.py restart) would duplicate the whole corpus.
+        # Start from an empty collection so the index mirrors `chunks` exactly.
+        vectorstore = Chroma(
+            embedding_function=self.embeddings,
             persist_directory=persist_directory,
         )
-        bm25_retriever = BM25Retriever.from_documents(processed_chunks, k=60)
+        vectorstore.reset_collection()
+        vectorstore.add_documents(processed_chunks)
+        bm25_retriever = BM25Retriever.from_documents(
+            processed_chunks, k=settings.retrieval_depth
+        )
 
         return vectorstore, bm25_retriever

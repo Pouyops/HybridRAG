@@ -118,10 +118,6 @@ def run_strategy_comparison_once(gitlab_documents, dataset_path, llm, judge_llm,
 
         metrics = evaluator.run_test_suite(dataset_path)
 
-        failure_rate = 0.0
-        if metrics["total_runs"] > 0:
-            failure_rate = len(metrics["failures"]) / metrics["total_runs"]
-
         row = {
             "strategy": strategy,
             "run_idx": run_idx,
@@ -129,7 +125,7 @@ def run_strategy_comparison_once(gitlab_documents, dataset_path, llm, judge_llm,
             "Faithfulness": metrics["avg_faithfulness"],
             "Retrieval Relevance": metrics["avg_retrieval"],
             "Citation Accuracy": metrics["avg_citation_accuracy"],
-            "Fallback Rate": failure_rate,
+            "Fallback Rate": metrics["fallback_rate"],
         }
         _append_strategy_result(row)
         print(f"  -> saved: {strategy} run {run_idx}: {row}")

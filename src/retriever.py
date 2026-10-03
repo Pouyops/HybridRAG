@@ -60,28 +60,29 @@ class HybridRetriever:
         retrieval_depth: how many candidates to pull from each of the dense/
         sparse retrievers before fusion. rrf_k: the smoothing constant in the
         Reciprocal Rank Fusion formula 1/(rrf_k + rank) — independent of how
-        deep the initial retrieval goes.
+        deep the initial retrieval goes. Ranks are 1-based, as in the standard
+        RRF formulation (so rrf_k=0 is valid and the top hit scores 1/(rrf_k+1)).
         """
         dense_results = self.vectorstore.similarity_search(query, k=retrieval_depth)
-        sparse_results = self.bm25_retriever.invoke(query)
+        sparse_results = self.bm25_retriever.invoke(query)[:retrieval_depth]
 
         fused_scores = {}
 
-        for rank, doc in enumerate(dense_results):
-            doc_content = doc.page_content
-            if doc_content not in fused_scores:
-                fused_scores[doc_content] = {"doc": doc, "score": 0}
-            fused_scores[doc_content]["score"] += self.dense_weight * (
-                1 / (rrf_k + rank)
-            )
-
-        for rank, doc in enumerate(sparse_results):
-            doc_content = doc.page_content
-            if doc_content not in fused_scores:
-                fused_scores[doc_content] = {"doc": doc, "score": 0}
-            fused_scores[doc_content]["score"] += self.sparse_weight * (
-                1 / (rrf_k + rank)
-            )
+        for results, weight in (
+            (dense_results, self.dense_weight),
+            (sparse_results, self.sparse_weight),
+        ):
+            # A chunk contributes once per retriever, at its best rank — a
+            # duplicate in one result list must not add its score twice.
+            seen = set()
+            for rank, doc in enumerate(results, start=1):
+                doc_content = doc.page_content
+                if doc_content in seen:
+                    continue
+                seen.add(doc_content)
+                if doc_content not in fused_scores:
+                    fused_scores[doc_content] = {"doc": doc, "score": 0}
+                fused_scores[doc_content]["score"] += weight * (1 / (rrf_k + rank))
 
         ranked_results = sorted(
             fused_scores.values(), key=lambda x: x["score"], reverse=True
@@ -92,7 +93,9 @@ class HybridRetriever:
     def rerank(self, query, candidates, final_k=settings.final_k):
         """Returns [(doc, cross_encoder_score), ...] sorted by score, so callers
         can use the score as a real relevance signal instead of discarding it."""
-        pairs = [[query, doc["doc"].page_content] for doc in candidates]
+        if not candidates:
+            return []
+        pairs =[[query, doc["doc"].page_content] for doc in candidates]
         scores = self.reranker.predict(pairs)
 
         scored_docs = list(zip(candidates, scores))
@@ -106,7 +109,9 @@ class HybridRetriever:
             # Return the top final_k straight from RRF fusion, using the
             # fused score in place of the cross-encoder score so the
             # (doc, score) contract stays intact for downstream callers
-            # (e.g. score_confidence's rerank_scores parameter).
+            # (e.g. score_confidence's rerank_scores parameter). Note these
+            # are not calibrated relevance logits: RRF scores are ~0.01, so
+            # score_confidence's sigmoid maps them all to ~0.5.
             top = candidates[: settings.final_k]
             return [(item["doc"], float(item["score"])) for item in top]
         return self.rerank(query, candidates, final_k=settings.final_k)

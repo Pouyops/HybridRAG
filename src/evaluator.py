@@ -10,6 +10,19 @@ from config import settings
 from src.generator import CitationVerification
 
 
+def _split_counts(total, fractions):
+    """Split `total` into integer counts proportional to `fractions` that sum
+    to exactly `total` (largest-remainder rounding). Plain int() truncation
+    loses questions: 15 at 40/30/15/15% would give 6+4+2+2 = 14."""
+    exact = {key: total * frac for key, frac in fractions.items()}
+    counts = {key: int(value) for key, value in exact.items()}
+    leftover = total - sum(counts.values())
+    by_remainder = sorted(exact, key=lambda key: exact[key] - counts[key], reverse=True)
+    for key in by_remainder[:leftover]:
+        counts[key] += 1
+    return counts
+
+
 class QAPair(BaseModel):
     question: str = Field(description="The generated question")
     expected_answer: str = Field(description="The ground truth answer")
@@ -103,12 +116,15 @@ class SyntheticEvaluator:
 
     def build_dataset(self, total_questions=50):
         dataset = []
-        distribution = {
-            self.generate_lookup: int(total_questions * 0.4),
-            self.generate_multihop: int(total_questions * 0.3),
-            self.generate_unanswerable: int(total_questions * 0.15),
-            self.generate_ambiguous: int(total_questions * 0.15),
-        }
+        distribution = _split_counts(
+            total_questions,
+            {
+                self.generate_lookup: 0.4,
+                self.generate_multihop: 0.3,
+                self.generate_unanswerable: 0.15,
+                self.generate_ambiguous: 0.15,
+            },
+        )
 
         for func, count in distribution.items():
             for _ in range(count):
@@ -241,5 +257,10 @@ class RAGEvaluator:
             results["avg_faithfulness"] /= n
             results["avg_retrieval"] /= n
             results["avg_citation_accuracy"] /= n
+
+        # total_runs counts only answered questions, so the fallback rate's
+        # denominator must be answered + failed (every question asked).
+        n_asked = results["total_runs"] + len(results["failures"])
+        results["fallback_rate"] = len(results["failures"]) / n_asked if n_asked else 0.0
 
         return results

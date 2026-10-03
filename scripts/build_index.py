@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
 
+from config import settings
 from src.chunker import Chunker
 from src.indexer import indexer
 from src.loader import multiloader
@@ -28,7 +29,7 @@ def build_index(data_dir: str, persist_dir: str, strategy: str, api_key: str) ->
     if not documents:
         raise SystemExit(f"No documents found in {data_dir}")
 
-    embedding_fn = OpenAIEmbeddings(model="text-embedding-3-small")
+    embedding_fn = OpenAIEmbeddings(model=settings.embedding_model)
     chunker = Chunker(embedding_fn=embedding_fn)
     chunks = []
     for doc in documents:

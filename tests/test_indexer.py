@@ -48,3 +48,25 @@ def test_prepare_metadata_defaults_heading_when_no_headers_present():
 
     assert processed[0].metadata["section_heading"] == "N/A"
     assert processed[0].metadata["character_count"] == 1
+
+
+def test_create_indexes_rebuild_does_not_duplicate_chunks(tmp_path):
+    """Regression test: Chroma.from_documents appended to an existing
+    persisted collection, so every app restart duplicated the corpus."""
+    from langchain_core.embeddings import DeterministicFakeEmbedding
+
+    idx = _make_indexer()
+    idx.embeddings = DeterministicFakeEmbedding(size=16)
+
+    def chunks():
+        return [
+            Document(page_content=f"chunk {i}", metadata={"filepath": "doc.txt"})
+            for i in range(3)
+        ]
+
+    persist_dir = str(tmp_path / "chroma")
+    idx.create_indexes(chunks(), persist_directory=persist_dir)
+    vectorstore, bm25 = idx.create_indexes(chunks(), persist_directory=persist_dir)
+
+    assert len(vectorstore.get()["ids"]) == 3
+    assert len(bm25.docs) == 3

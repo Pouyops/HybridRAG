@@ -167,3 +167,54 @@ def test_get_relevant_documents_reranker_default_true_unchanged():
 
     # FakeCrossEncoder scores by trailing index, so highest index chunks win.
     assert [doc.page_content for doc, _ in results] == ["chunk 2", "chunk 1"]
+
+
+def test_retrieve_and_fuse_counts_a_duplicated_chunk_once_per_retriever():
+    """A chunk appearing twice in one retriever's list (e.g. a duplicated
+    index) must not collect that retriever's score twice."""
+    dup = Document(page_content="dup chunk", metadata={})
+    other = Document(page_content="other chunk", metadata={})
+
+    retriever = _make_retriever(dense_weight=1.0, sparse_weight=0.0)
+    retriever.vectorstore = FakeVectorstore([dup, dup, other])
+    retriever.bm25_retriever = FakeBM25([])
+
+    fused = retriever.retrieve_and_fuse("query", retrieval_depth=60, rrf_k=60, top_n=10)
+    fused_by_content = {item["doc"].page_content: item["score"] for item in fused}
+
+    assert fused_by_content["dup chunk"] == 1.0 / 61
+
+
+def test_retrieve_and_fuse_uses_one_based_ranks_so_rrf_k_zero_is_valid():
+    docs = [Document(page_content=f"chunk {i}", metadata={}) for i in range(2)]
+
+    retriever = _make_retriever(dense_weight=1.0, sparse_weight=0.0)
+    retriever.vectorstore = FakeVectorstore(docs)
+    retriever.bm25_retriever = FakeBM25([])
+
+    fused = retriever.retrieve_and_fuse("query", retrieval_depth=60, rrf_k=0, top_n=10)
+
+    assert [item["score"] for item in fused] == [1.0, 0.5]
+
+
+def test_retrieve_and_fuse_limits_sparse_results_to_retrieval_depth():
+    docs = [Document(page_content=f"chunk {i}", metadata={}) for i in range(5)]
+
+    retriever = _make_retriever()
+    retriever.vectorstore = FakeVectorstore([])
+    retriever.bm25_retriever = FakeBM25(docs)
+
+    fused = retriever.retrieve_and_fuse("query", retrieval_depth=2, rrf_k=60, top_n=10)
+
+    assert [item["doc"].page_content for item in fused] == ["chunk 0", "chunk 1"]
+
+
+def test_rerank_with_no_candidates_returns_empty_without_calling_model():
+    class ExplodingCrossEncoder:
+        def predict(self, pairs):
+            raise AssertionError("predict must not be called with no candidates")
+
+    retriever = _make_retriever()
+    retriever.reranker = ExplodingCrossEncoder()
+
+    assert retriever.rerank("query", []) == []

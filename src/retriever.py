@@ -1,6 +1,8 @@
 import logging
 import time
+from typing import List
 
+from pydantic import BaseModel, Field
 from sentence_transformers import CrossEncoder
 
 from config import settings
@@ -38,21 +40,24 @@ class HybridRetriever:
         bm25_retriever,
         dense_weight=settings.dense_weight,
         sparse_weight=settings.sparse_weight,
-        use_reranker: bool = True,
+        use_reranker: bool = settings.use_reranker,
         reranker=None,
+        cross_encoder_confidence: bool = settings.cross_encoder_confidence,
     ):
         self.vectorstore = vectorstore
         self.bm25_retriever = bm25_retriever
         self.dense_weight = dense_weight
         self.sparse_weight = sparse_weight
         self.use_reranker = use_reranker
-        # Skip the network download entirely when reranking is disabled (e.g.
-        # for the reranker-off ablation arm) — no point paying that cost.
-        # Callers comparing many configs can pass one preloaded `reranker`
-        # instead of loading the model once per retriever.
-        if use_reranker and reranker is None:
+        self.cross_encoder_confidence = cross_encoder_confidence
+        # The cross-encoder is needed to reorder candidates (use_reranker) or
+        # just to score the final chunks for the confidence gate. Skip the
+        # download when neither is wanted. Callers comparing many configs can
+        # pass one preloaded `reranker` instead of loading it per retriever.
+        needs_model = use_reranker or cross_encoder_confidence
+        if needs_model and reranker is None:
             reranker = _load_cross_encoder(_RERANKER_MODEL)
-        self.reranker = reranker if use_reranker else None
+        self.reranker = reranker if needs_model else None
 
     def retrieve_and_fuse(
         self,
@@ -110,13 +115,88 @@ class HybridRetriever:
 
     def get_relevant_documents(self, query):
         candidates = self.retrieve_and_fuse(query, top_n=settings.top_n)
-        if not self.use_reranker:
-            # Return the top final_k straight from RRF fusion, using the
-            # fused score in place of the cross-encoder score so the
-            # (doc, score) contract stays intact for downstream callers
-            # (e.g. score_confidence's rerank_scores parameter). Note these
-            # are not calibrated relevance logits: RRF scores are ~0.01, so
-            # score_confidence's sigmoid maps them all to ~0.5.
-            top = candidates[: settings.final_k]
-            return [(item["doc"], float(item["score"])) for item in top]
-        return self.rerank(query, candidates, final_k=settings.final_k)
+        return self.finalize(query, candidates)
+
+    def finalize(self, query, candidates):
+        """Pick the final_k chunks from fused `candidates` and attach a score
+        to each, returning [(doc, score), ...].
+
+        With use_reranker the cross-encoder reorders the candidates. Without
+        it the fused order is kept, and (with cross_encoder_confidence) the
+        cross-encoder only scores the chosen chunks, so score_confidence
+        still gets calibrated relevance logits. Otherwise the raw RRF score
+        is returned; it is ~0.01, so score_confidence's sigmoid maps it to
+        ~0.5 for every query, which is why that path is not the default.
+        """
+        if self.use_reranker:
+            return self.rerank(query, candidates, final_k=settings.final_k)
+        top = candidates[: settings.final_k]
+        if self.cross_encoder_confidence and top:
+            scores = self.reranker.predict([[query, item["doc"].page_content] for item in top])
+            return [(item["doc"], float(score)) for item, score in zip(top, scores)]
+        return [(item["doc"], float(item["score"])) for item in top]
+
+
+class SubQuestions(BaseModel):
+    questions: List[str] = Field(
+        description="Self-contained sub-questions, or an empty list for a single-part question"
+    )
+
+
+class DecomposingRetriever:
+    """Retrieves separately for each part of a multi-part question.
+
+    A single query with final_k=5 rarely brings back two distant passages:
+    on the RFC set, no configuration retrieved all the evidence for more
+    than 4 of 9 multi-hop questions. The LLM splits the question into up to
+    max_subquestions sub-questions; each (plus the original question) is
+    retrieved and fused as usual, and the per-query rankings are combined
+    with reciprocal rank fusion so every sub-question's best passages
+    compete for the final slots. Single-part questions cost one extra LLM
+    call and are otherwise retrieved exactly as before.
+    """
+
+    def __init__(self, base, llm, max_subquestions=settings.max_subquestions):
+        self.base = base
+        self.decomposer = llm.with_structured_output(SubQuestions)
+        self.max_subquestions = max_subquestions
+
+    def decompose(self, query):
+        prompt = (
+            "Decide whether the user's question asks for two or more separate pieces of "
+            "information that are likely to be documented in different places. If it "
+            "does, rewrite each piece as a standalone sub-question, using the question's "
+            "own terms. Do not add background, definition or follow-up questions the "
+            "user did not ask. If the question asks for one piece of information, "
+            f"return an empty list. Return at most {self.max_subquestions}.\n"
+            f"Question: {query}"
+        )
+        try:
+            questions = self.decomposer.invoke(prompt).questions
+        except Exception as e:  # noqa: BLE001 - decomposition is best-effort
+            logger.warning("Query decomposition failed, retrieving undecomposed: %s", e)
+            return []
+        seen = {query.strip().lower()}
+        cleaned = []
+        for q in questions:
+            key = q.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                cleaned.append(q.strip())
+        return cleaned[: self.max_subquestions]
+
+    def get_relevant_documents(self, query):
+        sub_questions = self.decompose(query)
+        if not sub_questions:
+            return self.base.get_relevant_documents(query)
+
+        combined = {}
+        for q in [query] + sub_questions:
+            for rank, item in enumerate(
+                self.base.retrieve_and_fuse(q, top_n=settings.top_n), start=1
+            ):
+                key = item["doc"].page_content
+                entry = combined.setdefault(key, {"doc": item["doc"], "score": 0.0})
+                entry["score"] += 1 / (settings.rrf_k + rank)
+        candidates = sorted(combined.values(), key=lambda x: x["score"], reverse=True)
+        return self.base.finalize(query, candidates[: settings.top_n])

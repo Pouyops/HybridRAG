@@ -7,6 +7,19 @@ from pydantic import BaseModel, Field
 from config import settings
 
 
+# A lenient judge accepted a claim that mixed real cited text with outside
+# knowledge: asked about HSTS (not in the corpus), the generator explained it
+# from memory and cited the Cache-Control max-age passage, and the claim
+# was judged "supported" (RESULTS.md, U04). Every part must be in the text.
+_STRICT_SUPPORT_RULE = (
+    "Set is_supported to true only if EVERY statement in the claim is stated in, or "
+    "directly follows from, the source text. If any part relies on information that "
+    "is not in the source text, such as general knowledge or details of a different "
+    "header, mechanism or specification that merely shares a name with something in "
+    "the source, set is_supported to false and name the unsupported part."
+)
+
+
 def _normalize_cross_encoder_score(score: float) -> float:
     """Squash a raw cross-encoder logit into (0, 1) via a sigmoid."""
     return 1.0 / (1.0 + math.exp(-score))
@@ -105,6 +118,7 @@ class AdvancedRAGSystem:
             prompt = f"""
             Evaluate if the following claim is fully supported by the provided source
             text (which may combine multiple cited chunks).
+            {_STRICT_SUPPORT_RULE}
             Claim: {claim_text}
             Cited Chunk IDs: {chunk_ids}
             Source Text: {source_text}
@@ -146,6 +160,7 @@ class AdvancedRAGSystem:
             Evaluate if the following claim is fully supported by the numbered source
             blocks below (it may need more than one block). If it is, set
             cited_chunk_ids to the numbers of the blocks that support it.
+            {_STRICT_SUPPORT_RULE}
             Claim: {claim_text}
             Source Blocks:
             {blocks}
@@ -233,12 +248,19 @@ class AdvancedRAGSystem:
         )
 
         if not confidence.is_confident:
-            return self._format_unknown_response(
+            response = self._format_unknown_response(
                 query,
                 "System confidence fell below threshold.",
                 chunks,
                 confidence.composite_score,
             )
+            # Say *why* it declined: which signal was low, and which claims
+            # the verifier rejected.
+            response["confidence_metrics"] = confidence.model_dump()
+            response["flagged_citations"] = [
+                v.model_dump() for v in verification.verifications if not v.is_supported
+            ]
+            return response
 
         return {
             "status": "Success",

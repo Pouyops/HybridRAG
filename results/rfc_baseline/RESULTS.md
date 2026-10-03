@@ -1,4 +1,6 @@
-# Evaluation Results
+# Evaluation Results: RFC corpus baseline (archived)
+
+> **Archived.** Measurements of the pipeline *before* the changes these results motivated (reranker off by default, cross-encoder confidence scoring, query decomposition, capped Markdown chunks, strict citation verifier). The current results and a before/after comparison are in the root [`RESULTS.md`](../../RESULTS.md). File paths below are relative to this folder.
 
 **Corpus:** the IETF HTTP core standards. RFC 9110 (HTTP Semantics), RFC 9111 (HTTP Caching) and RFC 9112 (HTTP/1.1) total about 92,000 words of normative, heavily cross-referenced text. `scripts/fetch_corpus.py` downloads them and converts them to Markdown with their section structure intact.
 
@@ -13,7 +15,7 @@
 
 Each Lookup and Multi-Hop question lists the RFC sections it depends on and one or more verbatim **evidence** passages. That allows retrieval to be scored exactly, by checking whether the chunks given to the generator contain the passage, with no LLM judge involved. Every evidence passage was verified to occur in the converted corpus.
 
-The previous seven-file Apollo 11 corpus was too small to separate configurations: every metric sat between 0.98 and 1.00. Its results are archived in [`results/apollo11/RESULTS.md`](results/apollo11/RESULTS.md).
+The previous seven-file Apollo 11 corpus was too small to separate configurations: every metric sat between 0.98 and 1.00. Its results are archived in [`results/apollo11/RESULTS.md`](../apollo11/RESULTS.md).
 
 ---
 
@@ -32,7 +34,7 @@ All numbers below come from runs on 2026-10-03 with `gpt-4o-mini` as both genera
 
 ## 1. Retrieval quality: exact scoring against gold evidence
 
-Command: `python scripts/eval_retrieval.py`. Raw data: [`results/retrieval_eval.csv`](results/retrieval_eval.csv). Covers the 23 answerable questions with `final_k = 5`. No LLM is involved in scoring.
+Command: `python scripts/eval_retrieval.py`. Raw data: [`results/retrieval_eval.csv`](retrieval_eval.csv). Covers the 23 answerable questions with `final_k = 5`. No LLM is involved in scoring.
 
 | Chunking | Mode | Reranker | hit@1 | hit@5 | full@5 | Multi-hop full@5 | Recall | MRR | Words to LLM |
 |---|---|---|---|---|---|---|---|---|---|
@@ -82,7 +84,7 @@ LangChain's `BM25Retriever` defaults to a bare `str.split()`. It is case-sensiti
 
 ## 2. Chunking strategies end to end (LLM-judged)
 
-Command: `python main.py --runs 3`. Raw data: [`results/strategy_comparison_results.csv`](results/strategy_comparison_results.csv). Every strategy uses the default retrieval setup (hybrid 0.7/0.3 with the reranker). Each value is the mean ± std over 3 runs of all 32 questions.
+Command: `python main.py --runs 3`. Raw data: [`results/strategy_comparison_results.csv`](strategy_comparison_results.csv). Every strategy uses the default retrieval setup (hybrid 0.7/0.3 with the reranker). Each value is the mean ± std over 3 runs of all 32 questions.
 
 | Strategy | Correctness | Faithfulness | Retrieval relevance | Citation accuracy | Fallback rate |
 |---|---|---|---|---|---|
@@ -108,7 +110,7 @@ Fallback rate on its own can't show whether a strategy refuses the *right* quest
 
 ## 3. Retrieval and reranker ablation (LLM-judged, TokenRecursive)
 
-Command: `python scripts/run_ablation.py --runs 3`. Raw data: [`results/ablation_results.csv`](results/ablation_results.csv); summary: [`results/ablation_summary.csv`](results/ablation_summary.csv). Each value is the mean over 3 runs of 32 questions. Standard deviations are ≤ 0.012 except citation accuracy (≤ 0.021).
+Command: `python scripts/run_ablation.py --runs 3`. Raw data: [`results/ablation_results.csv`](ablation_results.csv); summary: [`results/ablation_summary.csv`](ablation_summary.csv). Each value is the mean over 3 runs of 32 questions. Standard deviations are ≤ 0.012 except citation accuracy (≤ 0.021).
 
 | Config | Correctness | Faithfulness | Retrieval relevance | Citation accuracy | Fallback rate |
 |---|---|---|---|---|---|
@@ -119,9 +121,9 @@ Command: `python scripts/run_ablation.py --runs 3`. Raw data: [`results/ablation
 | Hybrid 0.3/0.7 | 0.896 | 0.957 | 0.906 | 0.914 | 0.156 |
 | Hybrid 0.7/0.3, reranker **off** | **0.919** | 0.939 | 0.865 | **0.998** | 0.125 |
 
-![Retrieval mode](results/ablation_retrieval_mode.png)
-![Reranker on vs off](results/ablation_reranker_on_off.png)
-![RRF weight sweep](results/ablation_rrf_sweep.png)
+![Retrieval mode](ablation_retrieval_mode.png)
+![Reranker on vs off](ablation_reranker_on_off.png)
+![RRF weight sweep](ablation_rrf_sweep.png)
 
 - **Retrieval mode and RRF weights barely change answer quality** when the reranker is on: correctness stays within 0.896–0.905. That is expected, because the reranker re-sorts the same top 20 candidates whatever the fusion weights. Citation accuracy varies more (0.914–0.988), but its run-to-run std is ~0.02, so only the extremes are clearly different.
 - **Turning the reranker off gives the best correctness (0.919) and citation accuracy (0.998)**, consistent with the exact retrieval results in §1. It also lowers the fallback rate (4/32 vs 5/32). Part of that change comes from the confidence gate: without the reranker, the retrieval-confidence term is a sigmoid of tiny RRF scores and sits near 0.5 for every query (a known limitation). Lower faithfulness (0.939 vs 0.970) and the extra answered question mean the gate is laxer in this configuration, so this row isn't a clean, like-for-like win.

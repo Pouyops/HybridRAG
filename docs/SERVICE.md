@@ -113,10 +113,16 @@ environment variable of the same name (case-insensitive), including via
 | `retrieval_depth` | `60` | Candidates pulled from each of dense/sparse before fusion |
 | `rrf_k` | `60` | RRF smoothing constant `1/(rrf_k + rank)` |
 | `top_n` | `20` | Candidates kept after fusion, before reranking |
-| `final_k` | `5` | Chunks kept after cross-encoder reranking |
+| `final_k` | `5` | Chunks passed to the generator |
+| `use_reranker` | `false` | Reorder fused candidates with the cross-encoder (it lowered retrieval quality on the RFC corpus; see RESULTS.md) |
+| `cross_encoder_confidence` | `true` | Score the final chunks with the cross-encoder for the confidence gate, without reordering them |
+| `decompose_queries` | `true` | Split multi-part questions into sub-questions and retrieve for each |
+| `max_subquestions` | `3` | Upper bound on sub-questions per query |
 | `confidence_threshold` | `0.75` | Minimum composite confidence to return "Success" |
 | `chunk_size` | `512` | Token-recursive chunk size |
 | `chunk_overlap` | `50` | Token-recursive chunk overlap |
+| `chunking_strategy` | see `config.py` | Strategy used by the API, Streamlit and `build_pipeline()` |
+| `markdown_max_tokens` | `800` | Split Markdown-header sections longer than this (0 = no cap) |
 | `generator_model` | `gpt-4o-mini` | Answer-generation LLM |
 | `judge_model` | `gpt-4o-mini` | Evaluation / citation-judge LLM |
 | `embedding_model` | `text-embedding-3-small` | OpenAI embedding model |

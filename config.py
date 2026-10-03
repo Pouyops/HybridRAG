@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     rrf_k: int = 60
     top_n: int = 20
     final_k: int = 5
+    # Reorder the fused candidates with the cross-encoder. Off by default:
+    # on the RFC corpus it lowered hit@5 in all 9 chunking x mode
+    # combinations (RESULTS.md). The cross-encoder still scores the final
+    # chunks for the confidence gate (cross_encoder_confidence).
+    use_reranker: bool = False
+    cross_encoder_confidence: bool = True
+    # Ask the LLM to split multi-part questions into sub-questions and
+    # retrieve for each (src/retriever.py: DecomposingRetriever).
+    decompose_queries: bool = True
+    max_subquestions: int = 3
 
     # --- Generation / confidence (src/generator.py: AdvancedRAGSystem) ---
     confidence_threshold: float = 0.75
@@ -30,6 +40,11 @@ class Settings(BaseSettings):
     # --- Chunking (src/chunker.py: Chunker) ---
     chunk_size: int = 512
     chunk_overlap: int = 50
+    # Default strategy for the service and build_pipeline().
+    chunking_strategy: str = "TokenRecursive"
+    # Markdown-header sections longer than this many tokens are split further
+    # (0 disables the cap). Uncapped, some RFC sections are ~5k tokens.
+    markdown_max_tokens: int = 800
 
     # --- Models (main.py, src/indexer.py, src/evaluator.py) ---
     generator_model: str = "gpt-4o-mini"

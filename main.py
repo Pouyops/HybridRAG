@@ -16,7 +16,7 @@ from src.evaluator import RAGEvaluator, SyntheticEvaluator
 from src.generator import AdvancedRAGSystem
 from src.indexer import indexer
 from src.loader import multiloader
-from src.retriever import HybridRetriever
+from src.pipeline import build_retriever
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -112,7 +112,7 @@ def run_strategy_comparison_once(gitlab_documents, dataset_path, llm, judge_llm,
         idx = indexer(api_key=api_key)
         vectorstore, bm25 = idx.create_indexes(all_chunks, persist_directory=db_path)
 
-        retriever = HybridRetriever(vectorstore=vectorstore, bm25_retriever=bm25)
+        retriever = build_retriever(vectorstore, bm25, llm=llm)
         rag_pipeline = AdvancedRAGSystem(llm=llm, retriever=retriever)
         evaluator = RAGEvaluator(rag_pipeline=rag_pipeline, judge_llm=judge_llm)
 
@@ -281,11 +281,11 @@ if __name__ == "__main__":
         )
     else:
         print("--- Testing Single Query Execution ---")
-        chunker = Chunker(embedding_fn=None)
+        chunker = Chunker(embedding_fn=OpenAIEmbeddings(model=settings.embedding_model))
         all_chunks = []
         for doc in subset_all_documents:
             chunks = chunker.chunk_documents(
-                doc.page_content, doc.metadata, strategy="TokenRecursive"
+                doc.page_content, doc.metadata, strategy=settings.chunking_strategy
             )
             all_chunks.extend(chunks)
 
@@ -294,7 +294,7 @@ if __name__ == "__main__":
             all_chunks, persist_directory="./chroma_main_db"
         )
 
-        retriever = HybridRetriever(vectorstore=vectorstore, bm25_retriever=bm25)
+        retriever = build_retriever(vectorstore, bm25, llm=generator_llm)
         rag_system = AdvancedRAGSystem(llm=generator_llm, retriever=retriever)
 
         response = rag_system.generate_robust_answer(args.query)

@@ -5,13 +5,16 @@ from langchain_core.documents import Document
 from src.retriever import HybridRetriever
 
 
-def _make_retriever(dense_weight=0.7, sparse_weight=0.3, use_reranker=True):
+def _make_retriever(
+    dense_weight=0.7, sparse_weight=0.3, use_reranker=True, cross_encoder_confidence=False
+):
     """Build a HybridRetriever without running __init__, so the CrossEncoder
     (which downloads a model from the network) is never loaded."""
     retriever = object.__new__(HybridRetriever)
     retriever.dense_weight = dense_weight
     retriever.sparse_weight = sparse_weight
     retriever.use_reranker = use_reranker
+    retriever.cross_encoder_confidence = cross_encoder_confidence
     return retriever
 
 
@@ -230,3 +233,106 @@ def test_injected_reranker_is_used_without_loading_a_model():
 
     load.assert_not_called()
     assert retriever.reranker is sentinel
+
+
+def test_reranker_off_keeps_fused_order_but_scores_with_cross_encoder():
+    """With reranking off, the cross-encoder must not reorder the chunks, but
+    it still scores them so the confidence gate gets calibrated logits
+    instead of ~0.01 RRF scores (which sigmoid to ~0.5 for every query)."""
+    docs = [Document(page_content=f"chunk {i}", metadata={}) for i in range(4)]
+
+    retriever = _make_retriever(use_reranker=False, cross_encoder_confidence=True)
+    retriever.vectorstore = FakeVectorstore(docs)
+    retriever.bm25_retriever = FakeBM25([])
+    retriever.reranker = FakeCrossEncoder()  # scores chunk i as i
+
+    with patch("src.retriever.settings.final_k", 3):
+        results = retriever.get_relevant_documents("query")
+
+    assert [doc.page_content for doc, _ in results] == ["chunk 0", "chunk 1", "chunk 2"]
+    assert [score for _, score in results] == [0.0, 1.0, 2.0]
+
+
+def test_cross_encoder_loaded_for_confidence_even_without_reranking():
+    with patch("src.retriever._load_cross_encoder") as load:
+        load.return_value = "model"
+        retriever = HybridRetriever(None, None, use_reranker=False, cross_encoder_confidence=True)
+    assert retriever.reranker == "model"
+
+    with patch("src.retriever._load_cross_encoder") as load:
+        retriever = HybridRetriever(None, None, use_reranker=False, cross_encoder_confidence=False)
+    load.assert_not_called()
+    assert retriever.reranker is None
+
+
+class FakeDecomposer:
+    def __init__(self, questions=None, error=None):
+        self.questions, self.error, self.prompts = questions or [], error, []
+
+    def with_structured_output(self, schema):
+        return self
+
+    def invoke(self, prompt):
+        self.prompts.append(prompt)
+        if self.error:
+            raise self.error
+        from src.retriever import SubQuestions
+
+        return SubQuestions(questions=self.questions)
+
+
+class KeywordVectorstore:
+    """similarity_search returns the docs containing the query's last word."""
+
+    def __init__(self, docs):
+        self.docs = docs
+
+    def similarity_search(self, query, k):
+        word = query.split()[-1].strip("?").lower()
+        return [d for d in self.docs if word in d.page_content.lower()][:k]
+
+
+def _decomposing(questions, docs, error=None):
+    from src.retriever import DecomposingRetriever
+
+    base = _make_retriever(dense_weight=1.0, sparse_weight=0.0, use_reranker=False)
+    base.vectorstore = KeywordVectorstore(docs)
+    base.bm25_retriever = FakeBM25([])
+    return DecomposingRetriever(base, FakeDecomposer(questions, error))
+
+
+def test_decomposing_retriever_collects_passages_for_each_sub_question():
+    docs = [Document(page_content=f"caching filler {i}", metadata={}) for i in range(6)]
+    docs.append(Document(page_content="the heuristic freshness rule", metadata={}))
+    docs.append(Document(page_content="status 200 is heuristically cacheable", metadata={}))
+    retriever = _decomposing(["What is the freshness rule?", "Is a 200 cacheable?"], docs)
+
+    with patch("src.retriever.settings.final_k", 3):
+        results = retriever.get_relevant_documents("Can a cache reuse a 200 under caching")
+
+    contents = [d.page_content for d, _ in results]
+    assert "the heuristic freshness rule" in contents
+    assert "status 200 is heuristically cacheable" in contents
+
+
+def test_decomposing_retriever_falls_back_to_plain_retrieval():
+    docs = [Document(page_content="alpha caching", metadata={})]
+
+    for retriever in (
+        _decomposing([], docs),  # single-part question
+        _decomposing(["Q"], docs, error=ValueError("bad JSON")),  # decomposer failed
+    ):
+        results = retriever.get_relevant_documents("tell me about caching")
+        assert [d.page_content for d, _ in results] == ["alpha caching"]
+
+
+def test_decompose_drops_duplicates_and_caps_count():
+    from src.retriever import DecomposingRetriever
+
+    retriever = DecomposingRetriever(
+        base=None,
+        llm=FakeDecomposer(["What is X?", "what is x?", "  ", "Original?", "B?", "C?", "D?"]),
+        max_subquestions=3,
+    )
+
+    assert retriever.decompose("original?") == ["What is X?", "B?", "C?"]

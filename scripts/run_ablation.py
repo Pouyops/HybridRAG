@@ -1,14 +1,16 @@
 """Ablation study for the hybrid retrieval + reranking knobs.
 
-Measures, against the FROZEN evaluation_dataset.json (see main.py
---regenerate-eval-set), how three knobs affect answer quality:
+Measures, against the curated evaluation_dataset.json, how each retrieval
+knob affects answer quality. Every arm differs from the config.py defaults
+in exactly one knob:
 
-  (a) retrieval mode   -- dense-only / sparse-only / hybrid (0.7/0.3), reranker on
-  (b) reranker         -- on vs off, at the default hybrid 0.7/0.3 weights
-  (c) RRF weight sweep -- 0.5/0.5, 0.7/0.3 (default), 0.3/0.7, reranker on
+  (a) retrieval mode     -- dense-only / sparse-only / default hybrid weights
+  (b) reranker           -- the default vs the opposite use_reranker setting
+  (c) decomposition      -- the default vs the opposite decompose_queries setting
+  (d) RRF weight sweep   -- 0.5/0.5 and 0.3/0.7 vs the default weights
 
-Chunking strategy is held fixed at "TokenRecursive" throughout so it isn't a
-confound (it's already compared separately by main.py's strategy comparison).
+Chunking is held fixed at settings.chunking_strategy so it isn't a confound
+(main.py compares chunking strategies separately).
 
 Uses OpenAI gpt-4o-mini (config.settings.generator_model / judge_model) as
 both the generator and judge LLM -- same model main.py's default flow uses.
@@ -58,7 +60,8 @@ from src.evaluator import RAGEvaluator  # noqa: E402
 from src.generator import AdvancedRAGSystem  # noqa: E402
 from src.indexer import indexer  # noqa: E402
 from src.loader import multiloader  # noqa: E402
-from src.retriever import HybridRetriever, _RERANKER_MODEL, _load_cross_encoder  # noqa: E402
+from src.pipeline import build_retriever  # noqa: E402
+from src.retriever import _RERANKER_MODEL, _load_cross_encoder  # noqa: E402
 
 RESULTS_DIR = os.path.join(REPO_ROOT, "results")
 RESULTS_CSV = os.path.join(RESULTS_DIR, "ablation_results.csv")
@@ -71,6 +74,7 @@ CSV_COLUMNS = [
     "dense_weight",
     "sparse_weight",
     "use_reranker",
+    "decompose",
     "run_idx",
     "avg_correctness",
     "avg_faithfulness",
@@ -84,59 +88,30 @@ CSV_COLUMNS = [
     "error",
 ]
 
-# Six unique configurations cover all three comparisons in the task; e.g.
-# "hybrid_default" (0.7/0.3, reranker on) is reused as the shared baseline
-# for the retrieval-mode comparison, the reranker on/off comparison, AND the
-# RRF weight sweep, so it is only ever run once per run_idx, not three times.
+# Every arm differs from the project defaults (config.py) in exactly one
+# knob, so each comparison isolates one change. "default" is the shared
+# baseline for all of them and is only run once per run_idx.
+_D = dict(
+    dense_weight=settings.dense_weight,
+    sparse_weight=settings.sparse_weight,
+    use_reranker=settings.use_reranker,
+    decompose=settings.decompose_queries,
+)
 CONFIGS = [
-    {
-        "name": "dense_only",
-        "dense_weight": 1.0,
-        "sparse_weight": 0.0,
-        "use_reranker": True,
-        "groups": ["retrieval_mode"],
-        "label": "Dense-only",
-    },
-    {
-        "name": "sparse_only",
-        "dense_weight": 0.0,
-        "sparse_weight": 1.0,
-        "use_reranker": True,
-        "groups": ["retrieval_mode"],
-        "label": "Sparse-only",
-    },
-    {
-        "name": "hybrid_default",
-        "dense_weight": settings.dense_weight,
-        "sparse_weight": settings.sparse_weight,
-        "use_reranker": True,
-        "groups": ["retrieval_mode", "reranker", "rrf_sweep"],
-        "label": "Hybrid 0.7/0.3 (default)",
-    },
-    {
-        "name": "hybrid_no_reranker",
-        "dense_weight": settings.dense_weight,
-        "sparse_weight": settings.sparse_weight,
-        "use_reranker": False,
-        "groups": ["reranker"],
-        "label": "Hybrid, reranker OFF",
-    },
-    {
-        "name": "rrf_50_50",
-        "dense_weight": 0.5,
-        "sparse_weight": 0.5,
-        "use_reranker": True,
-        "groups": ["rrf_sweep"],
-        "label": "0.5 / 0.5",
-    },
-    {
-        "name": "rrf_30_70",
-        "dense_weight": 0.3,
-        "sparse_weight": 0.7,
-        "use_reranker": True,
-        "groups": ["rrf_sweep"],
-        "label": "0.3 / 0.7",
-    },
+    {"name": "dense_only", **_D, "dense_weight": 1.0, "sparse_weight": 0.0,
+     "groups": ["retrieval_mode"], "label": "Dense-only"},
+    {"name": "sparse_only", **_D, "dense_weight": 0.0, "sparse_weight": 1.0,
+     "groups": ["retrieval_mode"], "label": "Sparse-only"},
+    {"name": "default", **_D, "groups": ["retrieval_mode", "reranker", "rrf_sweep", "decompose"],
+     "label": f"Default ({settings.dense_weight}/{settings.sparse_weight})"},
+    {"name": "reranker_toggled", **_D, "use_reranker": not settings.use_reranker,
+     "groups": ["reranker"], "label": f"Reranker {'OFF' if settings.use_reranker else 'ON'}"},
+    {"name": "decompose_toggled", **_D, "decompose": not settings.decompose_queries,
+     "groups": ["decompose"], "label": f"Decomposition {'OFF' if settings.decompose_queries else 'ON'}"},
+    {"name": "rrf_50_50", **_D, "dense_weight": 0.5, "sparse_weight": 0.5,
+     "groups": ["rrf_sweep"], "label": "0.5 / 0.5"},
+    {"name": "rrf_30_70", **_D, "dense_weight": 0.3, "sparse_weight": 0.7,
+     "groups": ["rrf_sweep"], "label": "0.3 / 0.7"},
 ]
 CONFIG_BY_NAME = {c["name"]: c for c in CONFIGS}
 
@@ -239,7 +214,7 @@ def build_shared_index(data_dir: str, openai_api_key: str):
     """Build ONE Chroma + BM25 index (TokenRecursive chunking, fixed) shared
     across every ablation config -- only retrieval weights/reranker differ
     between configs, so there is no need to re-embed per config."""
-    print("Building shared index (TokenRecursive chunking, fixed across all configs)...")
+    print(f"Building shared index ({settings.chunking_strategy} chunking, fixed across all configs)...")
     embeddings = OpenAIEmbeddings(model=settings.embedding_model)
 
     loader = multiloader(data_dir)
@@ -251,7 +226,7 @@ def build_shared_index(data_dir: str, openai_api_key: str):
     chunks = []
     for doc in documents:
         chunks.extend(
-            chunker.chunk_documents(doc.page_content, doc.metadata, strategy="TokenRecursive")
+            chunker.chunk_documents(doc.page_content, doc.metadata, strategy=settings.chunking_strategy)
         )
 
     if os.path.exists(INDEX_DIR):
@@ -293,13 +268,15 @@ def _shared_cross_encoder():
 
 
 def run_one_cell(config, run_idx, vectorstore, bm25, generator_llm, judge_llm, dataset_path):
-    retriever = HybridRetriever(
-        vectorstore=vectorstore,
-        bm25_retriever=bm25,
+    retriever = build_retriever(
+        vectorstore,
+        bm25,
+        llm=generator_llm,
+        decompose=config["decompose"],
         dense_weight=config["dense_weight"],
         sparse_weight=config["sparse_weight"],
         use_reranker=config["use_reranker"],
-        reranker=_shared_cross_encoder() if config["use_reranker"] else None,
+        reranker=_shared_cross_encoder(),
     )
     rag_pipeline = AdvancedRAGSystem(llm=generator_llm, retriever=retriever)
     evaluator = RAGEvaluator(rag_pipeline=rag_pipeline, judge_llm=judge_llm)
@@ -318,6 +295,7 @@ def run_one_cell(config, run_idx, vectorstore, bm25, generator_llm, judge_llm, d
         "dense_weight": config["dense_weight"],
         "sparse_weight": config["sparse_weight"],
         "use_reranker": config["use_reranker"],
+        "decompose": config["decompose"],
         "run_idx": run_idx,
         "avg_correctness": metrics["avg_correctness"],
         "avg_faithfulness": metrics["avg_faithfulness"],
@@ -437,32 +415,18 @@ def generate_summary_and_charts():
     print(f"\nRaw per-run results: {RESULTS_CSV}")
     print(f"Aggregated summary:  {SUMMARY_CSV}")
 
-    print("\nGenerating charts (retrieval relevance is the metric most directly")
-    print("affected by these knobs)...")
-    _bar_chart(
-        agg,
-        ["dense_only", "sparse_only", "hybrid_default"],
-        "retrieval",
-        "Retrieval Relevance (LLM judge, 0-1)",
-        "Retrieval Mode: Dense-only vs Sparse-only vs Hybrid",
-        "ablation_retrieval_mode.png",
-    )
-    _bar_chart(
-        agg,
-        ["hybrid_default", "hybrid_no_reranker"],
-        "retrieval",
-        "Retrieval Relevance (LLM judge, 0-1)",
-        "Cross-Encoder Reranker: On vs Off",
-        "ablation_reranker_on_off.png",
-    )
-    _bar_chart(
-        agg,
-        ["rrf_50_50", "hybrid_default", "rrf_30_70"],
-        "retrieval",
-        "Retrieval Relevance (LLM judge, 0-1)",
-        "RRF Dense/Sparse Weight Sweep",
-        "ablation_rrf_sweep.png",
-    )
+    # Charts plot correctness: on the RFC corpus the judge's "retrieval
+    # relevance" rewarded topical context over answer-bearing context, so it
+    # disagreed with exact retrieval scoring (see RESULTS.md).
+    print("\nGenerating charts (LLM-judged correctness)...")
+    charts = [
+        (["dense_only", "sparse_only", "default"], "Retrieval Mode", "ablation_retrieval_mode.png"),
+        (["default", "reranker_toggled"], "Cross-Encoder Reranker", "ablation_reranker_on_off.png"),
+        (["default", "decompose_toggled"], "Query Decomposition", "ablation_decomposition.png"),
+        (["rrf_50_50", "default", "rrf_30_70"], "RRF Dense/Sparse Weight Sweep", "ablation_rrf_sweep.png"),
+    ]
+    for names, title, filename in charts:
+        _bar_chart(agg, names, "correctness", "Correctness (LLM judge, 0-1)", title, filename)
 
 
 def main():
@@ -535,6 +499,7 @@ def main():
                 "dense_weight": config["dense_weight"],
                 "sparse_weight": config["sparse_weight"],
                 "use_reranker": config["use_reranker"],
+                "decompose": config["decompose"],
                 "run_idx": run_idx,
                 "avg_correctness": float("nan"),
                 "avg_faithfulness": float("nan"),

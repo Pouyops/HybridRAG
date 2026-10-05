@@ -323,12 +323,13 @@ if __name__ == "__main__":
         else:
             print(f"\n--- Reusing frozen {dataset_path} (pass --regenerate-eval-set to refresh it) ---")
 
-        print(f"\n--- Running Strategy Comparison ({args.runs} run(s)) ---")
-        comparison_report = run_strategy_comparison(
-            gitlab_documents=subset_all_documents,
-            dataset_path=dataset_path,
-            llm=generator_llm,
-            judge_llm=judge_llm,
-            api_key=OPENAI_API_KEY,
-            runs=args.runs,
-        )
+        if args.runs > 0:
+            print(f"\n--- Running Strategy Comparison ({args.runs} run(s)) ---")
+            comparison_report = run_strategy_comparison(
+                gitlab_documents=subset_all_documents,
+                dataset_path=dataset_path,
+                llm=generator_llm,
+                judge_llm=judge_llm,
+                api_key=OPENAI_API_KEY,
+                runs=args.runs,
+            )

@@ -1,0 +1,13 @@
+strategy,mode,reranker,n_chunks,hit@1,hit@k,full@k,recall,mrr,full@k_multihop,ctx_words,missed
+TokenRecursive,sparse,off,313,0.652,0.957,0.652,0.804,0.79,0.111,1672,M07
+TokenRecursive,sparse,on,313,0.522,0.87,0.652,0.761,0.67,0.111,1699,M07 M08 M09
+TokenRecursive,dense,off,313,0.435,0.913,0.652,0.783,0.63,0.111,1544,M04 M07
+TokenRecursive,dense,on,313,0.522,0.826,0.652,0.739,0.649,0.111,1692,M02 M07 M08 M09
+TokenRecursive,hybrid,off,313,0.522,0.957,0.652,0.804,0.721,0.111,1669,M07
+TokenRecursive,hybrid,on,313,0.522,0.826,0.652,0.739,0.649,0.111,1681,M02 M07 M08 M09
+Markdown,sparse,off,248,0.739,1.0,0.783,0.891,0.851,0.444,6020,
+Markdown,sparse,on,248,0.609,0.783,0.565,0.674,0.681,0.111,4315,L02 L03 L09 M04 M07
+Markdown,dense,off,248,0.435,0.739,0.478,0.609,0.554,0.111,2672,L07 L08 L12 L13 M04 M07
+Markdown,dense,on,248,0.522,0.696,0.435,0.565,0.594,0.111,3081,L02 L03 L08 L09 L12 M04 M07
+Markdown,hybrid,off,248,0.565,0.87,0.565,0.717,0.71,0.111,3700,L07 L08 M04
+Markdown,hybrid,on,248,0.609,0.783,0.565,0.674,0.675,0.222,3546,L02 L03 L09 M04 M07

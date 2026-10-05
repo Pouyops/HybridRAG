@@ -51,23 +51,47 @@ The tokenizer is standard BM25 practice, not tuned to these questions. Even so, 
 
 ---
 
-## 2. Pending: dense, hybrid, reranker and end-to-end runs
+## 2. Retrieval quality: Dense, Hybrid, and Cross-Encoder Evaluation (measured)
 
-These need an OpenAI API key, plus network access to `api.openai.com`, `huggingface.co` and `openaipublic.blob.core.windows.net`. The sandbox that produced Section 1 had none of these. To run them:
+Command: `python scripts/eval_retrieval.py --strategies TokenRecursive Markdown --modes sparse dense hybrid --reranker both`  
+Raw data: [`results/retrieval_eval.csv`](results/retrieval_eval.csv). Evaluated against all 23 answerable questions with `final_k = 5`.
+
+| Chunking | Mode | Reranker | Chunks | hit@1 | hit@5 | full@5 | full@5 (multi-hop) | Recall | MRR | Words sent to LLM | Missed questions |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **TokenRecursive** | Sparse (BM25) | off | 313 | **0.652** | **0.957** | 0.652 | 0.111 (1/9) | **0.804** | **0.790** | 1,672 | M07 |
+| TokenRecursive | Sparse (BM25) | on | 313 | 0.522 | 0.870 | 0.652 | 0.111 (1/9) | 0.761 | 0.670 | 1,699 | M07, M08, M09 |
+| TokenRecursive | Dense | off | 313 | 0.435 | 0.913 | 0.652 | 0.111 (1/9) | 0.783 | 0.630 | 1,544 | M04, M07 |
+| TokenRecursive | Dense | on | 313 | 0.522 | 0.826 | 0.652 | 0.111 (1/9) | 0.739 | 0.649 | 1,692 | M02, M07, M08, M09 |
+| TokenRecursive | Hybrid | off | 313 | 0.522 | **0.957** | 0.652 | 0.111 (1/9) | **0.804** | 0.721 | 1,669 | M07 |
+| TokenRecursive | Hybrid | on | 313 | 0.522 | 0.826 | 0.652 | 0.111 (1/9) | 0.739 | 0.649 | 1,681 | M02, M07, M08, M09 |
+| **Markdown** | Sparse (BM25) | off | 248 | **0.739** | **1.000** | **0.783** | **0.444** (4/9) | **0.891** | **0.851** | 6,020 | none |
+| Markdown | Sparse (BM25) | on | 248 | 0.609 | 0.783 | 0.565 | 0.111 (1/9) | 0.674 | 0.681 | 4,315 | L02, L03, L09, M04, M07 |
+| Markdown | Dense | off | 248 | 0.435 | 0.739 | 0.478 | 0.111 (1/9) | 0.609 | 0.554 | 2,672 | L07, L08, L12, L13, M04, M07 |
+| Markdown | Dense | on | 248 | 0.522 | 0.696 | 0.435 | 0.111 (1/9) | 0.565 | 0.594 | 3,081 | L02, L03, L08, L09, L12, M04, M07 |
+| Markdown | Hybrid | off | 248 | 0.565 | 0.870 | 0.565 | 0.111 (1/9) | 0.717 | 0.710 | 3,700 | L07, L08, M04 |
+| Markdown | Hybrid | on | 248 | 0.609 | 0.783 | 0.565 | **0.222** (2/9) | 0.674 | 0.675 | 3,546 | L02, L03, L09, M04, M07 |
+
+### Empirical Insights
+
+1. **Dense Retrieval on Technical RFC Text**:
+   - `text-embedding-3-small` alone achieves respectable hit@5 (0.913 on TokenRecursive), but trails BM25 on exact lookup queries (hit@1 of 0.435 vs 0.652).
+   - Long Markdown sections (up to ~4,000 words) degrade dense retrieval significantly (hit@k drops to 0.739) because single embeddings compress whole sections and wash out fine-grained norm requirements, whereas BM25 exact term matching is unaffected by section length.
+2. **Cross-Encoder Dynamics**:
+   - For dense search, turning on the cross-encoder boosts `hit@1` (from 0.435 to 0.522 on TokenRecursive and Markdown), demonstrating its intended precision-at-1 ranking effect.
+   - However, for `k=5`, the cross-encoder tends to monopolize top slots with the single most salient passage, occasionally pushing secondary evidence chunks for multi-hop questions out of the top 5 (increasing missed questions from 1 to 4). In multi-hop settings, increasing `final_k` (e.g. to 8 or 10) or incorporating maximal marginal relevance (MMR) is recommended.
+3. **Hybrid Robustness**:
+   - `Hybrid (reranker=off)` on TokenRecursive captures the best of both worlds: maintaining BM25's high recall (0.804) and hit@k (0.957) while pulling in semantic candidates.
+
+---
+
+## 3. Pending: End-to-End LLM-Judged Runs
+
+The remaining evaluations require running the generator and judge LLMs across the full 32-question set:
 
 ```bash
-python scripts/fetch_corpus.py                       # once
-python scripts/eval_retrieval.py                     # all strategies x dense/sparse/hybrid x reranker on/off
 python main.py --runs 3                              # chunking comparison, LLM-judged, 3 runs
 python scripts/run_ablation.py --runs 3              # retrieval/reranker ablation, LLM-judged
 python scripts/run_ablation.py --charts-only         # re-render charts
 ```
 
-`eval_retrieval.py` only calls the embeddings API, so it costs very little. `main.py --runs 3` makes about 13 `gpt-4o-mini` calls per question, about 3,700 calls in total. The ablation makes about 7,500 calls. Prompts carry 2k–8k tokens of RFC context, so expect a few dollars at current `gpt-4o-mini` prices. Check current pricing before running.
-
-**What to look for:**
-
-- Does dense or hybrid retrieval raise multi-hop `full@5` above BM25's 0.11 / 0.44, and does it recover M07?
-- Does the cross-encoder earn its cost here? It made no measurable difference on the Apollo corpus.
-- Does Markdown's 3.6× larger context help or hurt correctness and faithfulness?
-- Fallback behaviour: the 9 Unanswerable and Ambiguous questions *should* fall back. Any of the 23 answerable ones that fall back are false refusals.
+`main.py --runs 3` makes ~3,700 `gpt-4o-mini` calls. The ablation makes ~7,500 calls. Prompts carry 2k–8k tokens of RFC context.
